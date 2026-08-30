@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SHADOW</title>
+  <link rel="icon" href="favicon.ico" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Fundo vivo: aurora, grade e estrelas -->
+  <div class="aurora"><span class="a1"></span><span class="a2"></span><span class="a3"></span></div>
+  <div class="grid-bg"></div>
+  <div class="stars"></div>
+
+  <!-- Núcleo (arc reactor): fica ATRÁS de tudo, como pano de fundo, para os
+       painéis poderem ocupar a tela inteira. -->
+  <div id="core-bg" aria-hidden="true">
+    <canvas id="reactor"></canvas>
+  </div>
+
+  <div id="scanlines"></div>
+  <div id="vignette"></div>
+
+  <!-- Cantos do HUD -->
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+
+  <header id="topbar">
+    <div class="brand">
+      <img class="logo-img" src="logo.png" alt="Logo" />
+      <div class="brand-text">
+        <span class="logo" id="brand-name">SHADOW</span>
+        <span class="subtitle">Assistente Pessoal</span>
+      </div>
+    </div>
+    <div class="topright">
+      <div id="clock" class="clock">--:--:--</div>
+      <div class="stat">
+        <span id="status-dot" class="dot"></span>
+        <span id="status-label">iniciando…</span>
+      </div>
+      <div class="stat model" id="model-label">—</div>
+      <div class="mini-stats" id="mini-stats">
+        <span class="mini" title="Uso da CPU">CPU <b id="mini-cpu">--%</b></span>
+        <span class="mini" title="Memória RAM">RAM <b id="mini-ram">--%</b></span>
+        <span class="mini" title="Temperatura da GPU">GPU <b id="mini-gpu">--°</b></span>
+        <span class="mini" title="Clima agora"><b id="mini-weather">--</b></span>
+      </div>
+    </div>
+  </header>
+
+  <main id="stage">
+    <!-- Painel de transcrição -->
+    <aside id="transcript-panel" class="panel">
+      <div class="panel-header">Registro de Conversa</div>
+      <div id="transcript" class="transcript"></div>
+    </aside>
+
+    <!-- ============================================================
+         MODO JOGO — tela inteira, dedicada só ao League of Legends.
+         Quando ativo, o <body> ganha .game-mode e este deck ocupa o palco.
+         ============================================================ -->
+    <section id="game-deck" class="hidden">
+
+      <header class="gd-top">
+        <div class="gd-title">
+          <img src="lol.png" class="gd-logo" alt="League of Legends" />
+          <div>
+            <b id="gd-mode">League of Legends</b>
+            <span id="lol-clock">fora de partida</span>
+          </div>
+        </div>
+
+        <!-- Você, em destaque -->
+        <div class="gd-me" id="gd-me">
+          <div class="gd-champ" id="lol-champ">—</div>
+          <div class="gd-kda"><b id="lol-kda">0 / 0 / 0</b><span>K / D / A</span></div>
+          <div class="gd-mini">
+            <div><span>Nível</span><b id="lol-level">—</b></div>
+            <div><span>CS</span><b id="lol-cs">—</b></div>
+            <div><span>Ouro</span><b id="lol-gold">—</b></div>
+            <div><span>Vida</span><b id="lol-hp">—</b></div>
+            <div><span>Partic.</span><b id="lol-kp">—</b></div>
+          </div>
+        </div>
+
+        <button id="gd-close" class="gd-close" type="button" title="Sair do Modo Jogo">✕ Sair</button>
+      </header>
+
+      <div class="gd-body">
+        <!-- Só esta parte depende de ter partida rolando -->
+        <div class="gd-partida" id="lol-live">
+        <!-- COLUNA 1: os dois times, separados -->
+        <section class="gd-col gd-times">
+          <div class="gd-h">Times</div>
+          <div class="gd-time-bloco ally">
+            <div class="gd-time-h"><span>Seu time</span><b id="lol-order">0/0/0</b></div>
+            <ul id="lol-allies" class="lol-team"></ul>
+          </div>
+          <div class="gd-time-bloco enemy">
+            <div class="gd-time-h"><span>Inimigos</span><b id="lol-chaos">0/0/0</b></div>
+            <ul id="lol-enemies" class="lol-team"></ul>
+          </div>
+          <div id="lol-jungler" class="lol-jungler hidden"></div>
+        </section>
+
+        <!-- COLUNA 2: objetivos, gráficos e o treinador -->
+        <section class="gd-col gd-centro">
+          <div class="gd-h">Objetivos · seus × deles</div>
+          <div class="lol-obj">
+            <div class="obj"><span>🐉 Dragão</span><b id="lol-dragon">—</b></div>
+            <div class="obj"><span>👹 Barão</span><b id="lol-baron">—</b></div>
+            <div class="obj"><span>🗼 Torres</span><b id="lol-towers">—</b></div>
+          </div>
+
+          <!-- O treinador vem antes dos gráficos: é o que pede ação agora. -->
+          <div class="gd-h">Treinador</div>
+          <ul id="lol-tips" class="lol-tips"><li class="muted">analisando…</li></ul>
+
+          <div class="lol-actions">
+            <div class="lol-btn-row">
+              <button id="lol-build-btn" class="voice-test" type="button">🛡️ Build vs Inimigos (IA)</button>
+              <button id="lol-coach-btn" class="voice-test" type="button">💡 Dica do Shadow (IA)</button>
+            </div>
+            <div class="lol-btn-row">
+              <button id="lol-replay" class="voice-test ghost" type="button" title="Repetir a última fala do Shadow">🔊 Ouvir de novo</button>
+              <button id="lol-stop" class="voice-test ghost" type="button" title="Parar a fala agora">⏹ Parar fala</button>
+            </div>
+            <label class="lol-callouts" title="Falar as dicas importantes em voz alta">
+              <input type="checkbox" id="lol-voice" checked /> avisos por voz
+            </label>
+          </div>
+
+          <div class="gd-h">Como a partida está indo</div>
+          <div id="gd-graficos" class="gd-graficos"></div>
+        </section>
+        </div><!-- /gd-partida -->
+
+        <!-- Sem partida: ocupa o lugar das duas colunas acima -->
+        <div id="lol-offline" class="lol-offline">
+          <img src="lol.png" class="lol-off-logo" alt="" />
+          <div>Nenhuma partida ativa.</div>
+          <div class="lol-off-sub">Entre em uma partida de League of Legends que eu começo a acompanhar sozinho. Enquanto isso, o desempenho do PC e o seu histórico ficam aqui do lado.</div>
+        </div>
+
+        <!-- COLUNA 3: desempenho do PC + histórico (sempre visível) -->
+        <section class="gd-col gd-lado">
+          <div class="gd-h">Desempenho do PC</div>
+          <div id="gd-perf" class="gd-perf"></div>
+          <div id="gd-fps-nota" class="gd-nota hidden"></div>
+
+          <div class="gd-h">
+            Histórico <span class="card-sub" id="lol-hist-count">0</span>
+          </div>
+          <div id="lol-hist-summary" class="lol-hist-summary hidden"></div>
+          <ul id="lol-history" class="lol-history"><li class="muted">nenhuma partida registrada ainda</li></ul>
+        </section>
+      </div>
+    </section>
+
+    <!-- Painel do meio: monitor do PC e clima -->
+    <aside id="side-panel" class="panel">
+      <div class="panel-header">
+        Central de Sistemas
+        <span class="hdr-host" id="hdr-host">—</span>
+      </div>
+      <div class="side-content">
+
+        <!-- Monitor do sistema -->
+        <section class="card">
+          <div class="card-title">Monitor do PC <span class="card-sub" id="uptime">—</span></div>
+
+          <div class="metric">
+            <div class="metric-row"><span class="m-label">CPU</span><span class="m-val"><span id="cpu-pct">--%</span></span></div>
+            <div class="bar"><i id="cpu-bar" style="width:0%"></i></div>
+            <div class="m-note" id="cpu-note">—</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-row"><span class="m-label">RAM</span><span class="m-val"><span id="ram-pct">--%</span></span></div>
+            <div class="bar"><i id="ram-bar" style="width:0%"></i></div>
+            <div class="m-note" id="ram-note">—</div>
+          </div>
+
+          <div class="metric" id="gpu-block">
+            <div class="metric-row"><span class="m-label">GPU</span><span class="m-val"><span id="gpu-temp">--°</span></span></div>
+            <div class="bar"><i id="gpu-bar" style="width:0%"></i></div>
+            <div class="m-note" id="gpu-note">—</div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-row"><span class="m-label">Disco C:</span><span class="m-val"><span id="disk-pct">--%</span></span></div>
+            <div class="bar"><i id="disk-bar" style="width:0%"></i></div>
+            <div class="m-note" id="disk-note">—</div>
+          </div>
+
+          <div class="chips">
+            <span class="chip" id="chip-cputemp">CPU —</span>
+            <span class="chip" id="chip-battery">Bateria —</span>
+          </div>
+        </section>
+
+        <!-- Clima -->
+        <section class="card weather" id="weather-card">
+          <div class="card-title">Clima <span class="card-sub" id="weather-city">—</span></div>
+          <div class="weather-main">
+            <span class="weather-emoji" id="weather-emoji">🌡️</span>
+            <span class="weather-temp" id="weather-temp">--°</span>
+            <span class="weather-desc" id="weather-desc">carregando…</span>
+          </div>
+          <div class="weather-grid">
+            <div><span>Sensação</span><b id="weather-feels">—</b></div>
+            <div><span>Mín / Máx</span><b id="weather-minmax">—</b></div>
+            <div><span>Umidade</span><b id="weather-hum">—</b></div>
+            <div><span>Vento</span><b id="weather-wind">—</b></div>
+            <div><span>Chuva</span><b id="weather-rain">—</b></div>
+          </div>
+        </section>
+
+        <!-- Lembretes -->
+        <section class="card">
+          <div class="card-title">Lembretes ativos</div>
+          <ul id="reminders-list" class="reminders"><li class="muted">nenhum</li></ul>
+        </section>
+
+      </div>
+    </aside>
+
+    <!-- Painel da direita: voz, música, atalhos e o aplicativo -->
+    <aside id="tools-panel" class="panel">
+      <div class="panel-header">
+        Controles
+        <span class="hdr-host" id="tools-hint">voz · música · atalhos</span>
+      </div>
+      <div class="side-content">
+
+        <!-- Voz -->
+        <section class="card">
+          <div class="card-title">Voz <span id="voice-tag" class="voice-tag">—</span></div>
+
+          <!-- Volume: o controle mais usado vem primeiro. -->
+          <div class="vol-row">
+            <button id="voice-mute" class="vol-btn" type="button" title="Silenciar / voltar">🔊</button>
+            <input id="voice-volume" class="vol-slider" type="range" min="0" max="100" step="1" value="80"
+                   title="Volume da voz do Shadow" />
+            <span id="voice-volume-val" class="vol-val">80%</span>
+          </div>
+
+          <label class="voice-row">
+            <span>Motor</span>
+            <select id="voice-engine">
+              <option value="local">Local (rápida)</option>
+              <option value="gemini">Gemini (máxima)</option>
+              <option value="browser">Navegador</option>
+            </select>
+          </label>
+          <label class="voice-row" id="voice-neural-row">
+            <span>Timbre</span>
+            <select id="voice-neural"></select>
+          </label>
+          <label class="voice-row" id="voice-browser-row">
+            <span>Reserva</span>
+            <select id="voice-browser"></select>
+          </label>
+          <div class="lol-btn-row">
+            <button id="voice-test" class="voice-test" type="button">Testar voz</button>
+            <button id="voice-repeat" class="voice-test ghost" type="button" title="Repetir a última fala">🔊 Ouvir de novo</button>
+          </div>
+        </section>
+
+        <!-- Aplicativo (Electron / iniciar com o Windows) -->
+        <section class="card" id="app-card">
+          <div class="card-title">Aplicativo <span class="card-sub" id="app-mode">—</span></div>
+          <label class="switch-row" id="startup-row">
+            <span>Iniciar com o Windows</span>
+            <input type="checkbox" id="startup-toggle" />
+          </label>
+          <div class="cmd-hint" id="app-hint">—</div>
+        </section>
+
+        <!-- Spotify -->
+        <section class="card" id="spotify-card">
+          <div class="card-title">Spotify <span class="card-sub" id="sp-state">—</span></div>
+
+          <div id="sp-disconnected">
+            <div class="cmd-hint" style="margin-top:0;margin-bottom:10px">Conecte sua conta pra tocar músicas por comando ou pelo botão.</div>
+            <button id="sp-connect" class="voice-test" type="button">Conectar Spotify</button>
+            <div id="sp-notconfigured" class="cmd-hint hidden">⚠️ Falta configurar <b>SPOTIFY_CLIENT_ID/SECRET</b> no .env.</div>
+          </div>
+
+          <div id="sp-connected" class="hidden">
+            <div class="sp-now">
+              <img id="sp-art" class="sp-art" alt="" />
+              <div class="sp-meta">
+                <div class="sp-track" id="sp-track">—</div>
+                <div class="sp-artist" id="sp-artist">—</div>
+              </div>
+            </div>
+            <div class="sp-controls">
+              <button id="sp-prev" class="sp-btn" type="button" title="Anterior">⏮</button>
+              <button id="sp-playpause" class="sp-btn big" type="button" title="Play / Pause">⏯</button>
+              <button id="sp-next" class="sp-btn" type="button" title="Próxima">⏭</button>
+            </div>
+            <input id="sp-vol" class="sp-vol" type="range" min="0" max="100" value="50" title="Volume da música" />
+            <form id="sp-search-form" class="sp-search" autocomplete="off">
+              <input id="sp-search" type="text" placeholder="tocar música (nome / artista)" />
+              <button type="submit" class="sp-play-btn" title="Tocar">▶</button>
+            </form>
+          </div>
+        </section>
+
+        <!-- Comandos salvos -->
+        <section class="card">
+          <div class="card-title">Comandos salvos <span class="card-sub" id="cmd-count">0</span></div>
+          <ul id="commands-list" class="commands"><li class="muted">nenhum ainda</li></ul>
+          <form id="command-form" class="command-form" autocomplete="off">
+            <input id="cmd-trigger" type="text" placeholder="Nome (ex.: modo trabalho)" maxlength="40" />
+            <input id="cmd-action" type="text" placeholder="O que fazer (ex.: abre o Chrome e o Spotify)" maxlength="200" />
+            <button type="submit" class="cmd-add">+ Salvar comando</button>
+          </form>
+          <div class="cmd-hint">Depois é só dizer: <b>"Shadow, modo trabalho"</b> ou clicar em ▶.</div>
+        </section>
+
+      </div>
+    </aside>
+  </main>
+
+  <footer id="controls">
+    <div id="state-text" class="state-text">Toque para falar</div>
+    <div class="dock">
+      <a id="salas-btn" class="salas-toggle" href="/salas" title="Salas — chamadas de voz, vídeo e tela com a equipe (estilo Discord)">
+        <span class="salas-ic">💬</span>
+        <span class="salas-lbl">Salas</span>
+      </a>
+      <button id="games-btn" class="games-toggle" type="button" title="Modo Jogo — acompanha o League of Legends ao vivo">
+        <img src="lol.png" class="g-logo" alt="League of Legends" />
+      </button>
+      <button id="mic-btn" class="mic" title="Ativar / desativar a escuta (espaço)">
+        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
+          <path d="M12 15a3.5 3.5 0 0 0 3.5-3.5V6a3.5 3.5 0 1 0-7 0v5.5A3.5 3.5 0 0 0 12 15Z"/>
+          <path d="M18.5 11.5a6.5 6.5 0 0 1-13 0M12 18v3"/>
+        </svg>
+      </button>
+      <form id="text-form" class="text-form" autocomplete="off">
+        <input id="text-input" type="text" placeholder="…ou digite um comando para o Shadow" />
+        <button type="submit" class="send" title="Enviar">▶</button>
+      </form>
+      <div class="dock-right">
+        <label class="handsfree" title="Se marcado, o Shadow só age quando você diz o nome dele">
+          <input type="checkbox" id="require-wake" checked />
+          <span>Exigir "Shadow"</span>
+        </label>
+        <div class="dock-vol" title="Volume da voz do Shadow">
+          <button id="dock-mute" class="vol-btn" type="button">🔊</button>
+          <input id="dock-volume" class="vol-slider mini" type="range" min="0" max="100" step="1" value="80" />
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Pilha de notificações (toasts) -->
+  <div id="toasts" class="toasts"></div>
+
+  <!-- Alerta de lembrete -->
+  <div id="reminder-overlay" class="reminder-overlay hidden">
+    <div class="reminder-card">
+      <div class="reminder-icon">⏰</div>
+      <div class="reminder-title">Lembrete</div>
+      <div id="reminder-message" class="reminder-message"></div>
+      <div id="reminder-time" class="reminder-time"></div>
+      <button id="reminder-dismiss" class="reminder-dismiss">Entendido</button>
+    </div>
+  </div>
+
+  <!-- Aviso de configuração (sem chave de API) — dá para colar a chave aqui -->
+  <div id="setup-banner" class="setup-banner hidden">
+    <div id="setup-text">
+      <strong>Falta configurar a chave da API.</strong>
+      Pegue uma grátis em <code>aistudio.google.com/apikey</code> e cole aqui embaixo.
+    </div>
+    <form id="apikey-form" class="apikey-form" autocomplete="off">
+      <input id="apikey-input" type="password" placeholder="cole a chave (AIza…)" spellcheck="false" />
+      <button type="submit">Salvar chave</button>
+    </form>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+  <script>
+    // Integração com o SHELL da plataforma: quando este app roda embutido
+    // (iframe), a navegação fica no shell — escondemos o botão "Salas" e
+    // aceitamos comandos para alternar entre o robô e a área de Jogos.
+    (function () {
+      var embedded = window.parent && window.parent !== window;
+      if (embedded) document.documentElement.classList.add('embedded');
+      window.addEventListener('message', function (e) {
+        var d = e && e.data;
+        if (typeof d !== 'string') return;
+        var inGame = document.body.classList.contains('game-mode');
+        if (d === 'shadow:show-games' && !inGame) {
+          var g = document.getElementById('games-btn'); if (g) g.click();
+        } else if (d === 'shadow:show-assistant' && inGame) {
+          var c = document.getElementById('gd-close'); if (c) c.click();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

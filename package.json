@@ -1,0 +1,69 @@
+{
+  "name": "shadow",
+  "version": "2.0.0",
+  "description": "Shadow — assistente pessoal por voz, com voz neural e controle do PC.",
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "app": "electron .",
+    "dist": "electron-builder --win",
+    "salas:install": "npm --prefix web install",
+    "salas:build": "npm --prefix web run build",
+    "salas:dev": "npm --prefix web run dev"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google/genai": "^1.52.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "mysql2": "^3.23.3",
+    "nanoid": "^5.1.16",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.shadow.assistente",
+    "productName": "Shadow",
+    "asar": false,
+    "directories": {
+      "output": "instalador"
+    },
+    "files": [
+      "desktop/**",
+      "server/**",
+      "public/**",
+      "voz-local/**",
+      "ferramentas/**",
+      "package.json",
+      ".env.example",
+      "!server/data/*.json",
+      "!instalador/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Shadow"
+    }
+  }
+}

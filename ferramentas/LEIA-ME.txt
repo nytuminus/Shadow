@@ -1,0 +1,29 @@
+FPS REAL NO MODO JOGO
+=====================
+
+O Shadow mostra CPU, GPU, VRAM, RAM e temperatura sozinho. O FPS do jogo é
+diferente: nem a API da Riot nem o Windows entregam os quadros por segundo de
+outro programa. Quem faz isso é o ETW do Windows, e a ferramenta que lê ele é
+o PresentMon (grátis e de código aberto, da Intel) - o mesmo motor usado pelo
+CapFrameX e pelo FrameView.
+
+COMO LIGAR
+----------
+1. Baixe o PresentMon em:
+   https://github.com/GameTechDev/PresentMon/releases
+   (o arquivo "PresentMon-x64.exe")
+
+2. Renomeie para  PresentMon.exe
+
+3. Coloque nesta pasta, ou em:
+   %APPDATA%\Shadow\ferramentas\PresentMon.exe
+   (essa segunda opcao e melhor: sobrevive a uma atualizacao do aplicativo)
+
+4. Abra o Shadow COMO ADMINISTRADOR. Ler quadros de outro processo passa pelo
+   ETW, e o Windows so libera isso com permissao de administrador.
+
+Pronto: entrando em partida, o medidor de FPS no Modo Jogo passa a mostrar o
+numero real, medido quadro a quadro.
+
+Sem o PresentMon, o Shadow mostra "n/d" no FPS - de proposito. Preferimos
+dizer que nao sabemos a inventar um numero.
