@@ -450,3 +450,5 @@ Sua voz ──(Edge: reconhecimento pt-BR)──▶ Interface (HUD)
 A sua chave de API fica **no motor local**, nunca no navegador — mais seguro.
 
 Feito com carinho. Bom proveito. ⚡
+t e s t e  
+ 
