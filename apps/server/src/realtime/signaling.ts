@@ -11,49 +11,68 @@
 // para grupos pequenos por chamada; se um dia precisar de salas grandes,
 // troca-se por uma SFU sem mexer no protocolo do cliente.
 
-import { WebSocketServer } from 'ws';
+import type { Server as HttpServer } from 'node:http';
+import { WebSocketServer, type WebSocket } from 'ws';
 import { nanoid } from 'nanoid';
 import { db } from '../db/index.js';
 
-/** @typedef {{ id:string, ws:import('ws').WebSocket, user:object, channelId:string|null, state:object }} Peer */
+interface PeerUser {
+  id: string | null;
+  name: string;
+  avatar?: string;
+  color?: string;
+}
 
-/** @type {Map<string, Peer>} */
-const peers = new Map(); // peerId -> peer
-/** @type {Map<string, Set<string>>} */
-const voice = new Map(); // channelId -> Set<peerId>
+interface PeerState {
+  muted?: boolean;
+  video?: boolean;
+  screen?: boolean;
+  [key: string]: unknown;
+}
 
-function send(ws, obj) {
+interface Peer {
+  id: string;
+  ws: WebSocket;
+  user: PeerUser;
+  channelId: string | null;
+  state: PeerState;
+}
+
+const peers = new Map<string, Peer>(); // peerId -> peer
+const voice = new Map<string, Set<string>>(); // channelId -> Set<peerId>
+
+function send(ws: WebSocket, obj: unknown): void {
   if (ws.readyState === ws.OPEN) {
     try { ws.send(JSON.stringify(obj)); } catch { /* conexão caiu */ }
   }
 }
 
-function broadcastAll(obj, exceptId) {
+function broadcastAll(obj: unknown, exceptId?: string): void {
   for (const [id, p] of peers) {
     if (id !== exceptId) send(p.ws, obj);
   }
 }
 
-function channelPeers(channelId) {
+function channelPeers(channelId: string) {
   const set = voice.get(channelId);
   if (!set) return [];
   return [...set]
     .map((id) => peers.get(id))
-    .filter(Boolean)
+    .filter((p): p is Peer => !!p)
     .map((p) => ({ id: p.id, user: p.user, state: p.state }));
 }
 
 // Snapshot de presença de TODOS os canais de voz — o cliente usa para pintar
 // os pontinhos de "quem está na chamada" ao lado de cada canal.
-function presenceSnapshot() {
-  const out = {};
+function presenceSnapshot(): Record<string, ReturnType<typeof channelPeers>> {
+  const out: Record<string, ReturnType<typeof channelPeers>> = {};
   for (const [channelId, set] of voice) {
     if (set.size) out[channelId] = channelPeers(channelId);
   }
   return out;
 }
 
-function leaveVoice(peer, notify = true) {
+function leaveVoice(peer: Peer, notify = true): void {
   const channelId = peer.channelId;
   if (!channelId) return;
   const set = voice.get(channelId);
@@ -69,16 +88,16 @@ function leaveVoice(peer, notify = true) {
   }
 }
 
-export function attachSignaling(server) {
+export function attachSignaling(server: HttpServer): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
-  wss.on('connection', (ws) => {
-    const peer = { id: nanoid(12), ws, user: { id: null, name: 'Convidado' }, channelId: null, state: {} };
+  wss.on('connection', (ws: WebSocket) => {
+    const peer: Peer = { id: nanoid(12), ws, user: { id: null, name: 'Convidado' }, channelId: null, state: {} };
     peers.set(peer.id, peer);
     send(ws, { type: 'welcome', selfId: peer.id, presence: presenceSnapshot() });
 
-    ws.on('message', async (raw) => {
-      let msg;
+    ws.on('message', async (raw: Buffer) => {
+      let msg: any;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
 
       switch (msg.type) {
@@ -91,7 +110,7 @@ export function attachSignaling(server) {
             avatar: u.avatar || '',
             color: u.color || '',
           };
-          try { await db().upsertUser(peer.user); } catch { /* opcional */ }
+          try { await db().upsertUser(peer.user as { id: string; name: string; avatar?: string; color?: string }); } catch { /* opcional */ }
           break;
         }
 
@@ -105,7 +124,7 @@ export function attachSignaling(server) {
           if (!voice.has(channelId)) voice.set(channelId, new Set());
           // Os pares que JÁ estavam no canal — o novato liga pra cada um deles.
           const existing = channelPeers(channelId);
-          voice.get(channelId).add(peer.id);
+          voice.get(channelId)!.add(peer.id);
           send(ws, { type: 'voice-peers', channelId, peers: existing });
           // Avisa os demais que alguém entrou (eles aguardam a oferta do novato).
           broadcastAll({ type: 'peer-joined', channelId, peer: { id: peer.id, user: peer.user, state: peer.state } }, peer.id);
@@ -143,7 +162,7 @@ export function attachSignaling(server) {
           let saved;
           try {
             saved = await db().addMessage(channelId, { userId: peer.user.id, userName: peer.user.name, text });
-          } catch (err) {
+          } catch {
             send(ws, { type: 'error', error: 'Falha ao salvar a mensagem.' });
             return;
           }

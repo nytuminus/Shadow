@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request, type Response } from 'express';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -60,12 +60,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
 const ROOT_DIR = join(__dirname, '..', '..', '..');
 
+const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
 // Abre a janela do app assim que o motor comeca a escutar. Como isto roda
 // dentro do callback do listen(), a porta ja esta no ar: nada de esperar
 // por tempo nem cair na tela de "localhost recusou a conexao".
 // So dispara quando iniciado pelo Shadow.bat (SHADOW_LAUNCH=1), para o
 // `npm start`/dev nao ficar abrindo navegador sozinho.
-function openAppWindow() {
+function openAppWindow(): void {
   if (process.platform !== 'win32') return;
   if (process.env.SHADOW_LAUNCH !== '1') return;
   try {
@@ -75,7 +77,7 @@ function openAppWindow() {
     });
     child.unref();
   } catch (err) {
-    console.error('[janela]', err?.message || err);
+    console.error('[janela]', errMsg(err));
   }
 }
 
@@ -147,8 +149,9 @@ app.post('/api/tts', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.send(wav);
   } catch (err) {
-    if (!err?.quota) console.error('[tts]', err?.message || err);
-    res.status(503).json({ error: err?.message || 'Falha na síntese.', quota: !!err?.quota });
+    const quota = !!(err as any)?.quota;
+    if (!quota) console.error('[tts]', errMsg(err));
+    res.status(503).json({ error: errMsg(err) || 'Falha na síntese.', quota });
   }
 });
 
@@ -166,8 +169,8 @@ app.post(
       );
       res.json({ text, calledByName });
     } catch (err) {
-      console.error('[stt]', err?.message || err);
-      res.status(503).json({ error: err?.message || 'Falha ao transcrever.' });
+      console.error('[stt]', errMsg(err));
+      res.status(503).json({ error: errMsg(err) || 'Falha ao transcrever.' });
     }
   }
 );
@@ -182,7 +185,7 @@ app.post('/api/apikey', async (req, res) => {
     console.log(`  ⚡  Chave da API configurada em ${caminho}`);
     res.json({ ok: true, ready: hasApiKey(), path: caminho });
   } catch (err) {
-    res.status(400).json({ error: err?.message || 'Não consegui salvar a chave.' });
+    res.status(400).json({ error: errMsg(err) || 'Não consegui salvar a chave.' });
   }
 });
 
@@ -212,7 +215,7 @@ app.post('/api/chat', async (req, res) => {
   res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
 
-  const send = (obj) => {
+  const send = (obj: Record<string, unknown>) => {
     try {
       res.write(JSON.stringify(obj) + '\n');
     } catch {
@@ -224,7 +227,7 @@ app.post('/api/chat', async (req, res) => {
     const { reply, actions } = await processMessage(userText, send);
     send({ type: 'final', text: reply, actions });
   } catch (err) {
-    console.error('[chat] erro:', err?.message || err);
+    console.error('[chat] erro:', errMsg(err));
     send({
       type: 'error',
       text: 'Tive um problema para processar isso agora. Tente de novo daqui a pouco.',
@@ -239,7 +242,7 @@ app.get('/api/metrics', async (req, res) => {
   try {
     res.json(await getMetrics());
   } catch (err) {
-    res.status(503).json({ error: err?.message || 'Falha ao ler o sistema.' });
+    res.status(503).json({ error: errMsg(err) || 'Falha ao ler o sistema.' });
   }
 });
 
@@ -250,7 +253,7 @@ app.get('/api/weather', async (req, res) => {
   try {
     res.json(await getWeather({ lat, lon }));
   } catch (err) {
-    res.status(503).json({ error: err?.message || 'Clima indisponível.' });
+    res.status(503).json({ error: errMsg(err) || 'Clima indisponível.' });
   }
 });
 
@@ -277,7 +280,7 @@ app.post('/api/lol/coach', async (req, res) => {
     const tip = await lolCoach(req.body?.state || {});
     res.json({ tip });
   } catch (err) {
-    res.status(503).json({ error: err?.message || 'Falha ao gerar a dica.' });
+    res.status(503).json({ error: errMsg(err) || 'Falha ao gerar a dica.' });
   }
 });
 
@@ -287,7 +290,7 @@ app.post('/api/lol/build', async (req, res) => {
     const advice = await lolBuildAdvice(req.body?.state || {});
     res.json({ advice });
   } catch (err) {
-    res.status(503).json({ error: err?.message || 'Falha ao montar a build.' });
+    res.status(503).json({ error: errMsg(err) || 'Falha ao montar a build.' });
   }
 });
 
@@ -295,11 +298,11 @@ app.post('/api/lol/build', async (req, res) => {
 // e salva no histórico. Disparado pela interface quando a partida termina.
 app.post('/api/lol/postgame', async (req, res) => {
   const state = getLastInGame();
-  if (!state?.active) return res.status(404).json({ error: 'Sem dados da última partida.' });
+  if (!state?.inGame || !state.active) return res.status(404).json({ error: 'Sem dados da última partida.' });
   try {
     const analysis = await lolPostGame(state);
     const a = state.active;
-    const o = state.objectives || {};
+    const o = state.objectives || ({} as typeof state.objectives);
     const entry = await addHistory({
       champion: a.champion,
       role: state.myRole || state.opponent?.role || '',
@@ -334,7 +337,7 @@ app.post('/api/lol/postgame', async (req, res) => {
     clearLastInGame(); // evita gerar o mesmo retrospecto duas vezes
     res.json({ report: entry });
   } catch (err) {
-    res.status(503).json({ error: err?.message || 'Falha ao gerar o retrospecto.' });
+    res.status(503).json({ error: errMsg(err) || 'Falha ao gerar o retrospecto.' });
   }
 });
 
@@ -355,7 +358,7 @@ app.patch('/api/lol/history/:id', async (req, res) => {
   const r = req.body?.result;
   const valido = r === 'Vitória' || r === 'Derrota' || r === null;
   if (!valido) return res.status(400).json({ error: 'Resultado inválido.' });
-  const entry = await updateHistory(req.params.id, { result: r });
+  const entry = await updateHistory(req.params.id!, { result: r });
   if (!entry) return res.status(404).json({ error: 'Partida não encontrada.' });
   res.json(entry);
 });
@@ -363,22 +366,22 @@ app.patch('/api/lol/history/:id', async (req, res) => {
 // Refaz o retrospecto a partir dos números guardados (útil depois de marcar
 // vitória/derrota, ou quando a análise anterior saiu ruim).
 app.post('/api/lol/history/:id/reanalyze', async (req, res) => {
-  const entry = getHistory(req.params.id);
+  const entry = getHistory(req.params.id!);
   if (!entry) return res.status(404).json({ error: 'Partida não encontrada.' });
   if (!entry.snapshot) {
     return res.status(400).json({ error: 'Esta partida é antiga e não guardou os números para reanálise.' });
   }
   try {
-    const analysis = await lolReanalyze({ ...entry.snapshot, resultado: entry.result || 'desconhecido' });
+    const analysis = await lolReanalyze({ ...(entry.snapshot as object), resultado: entry.result || 'desconhecido' });
     const salvo = await updateHistory(entry.id, { analysis });
     res.json(salvo);
   } catch (err) {
-    res.status(503).json({ error: err?.message || 'Falha ao refazer a análise.' });
+    res.status(503).json({ error: errMsg(err) || 'Falha ao refazer a análise.' });
   }
 });
 
 app.delete('/api/lol/history/:id', async (req, res) => {
-  res.json({ ok: await deleteHistory(req.params.id) });
+  res.json({ ok: await deleteHistory(req.params.id!) });
 });
 
 // ---- Iniciar com o Windows ----
@@ -389,7 +392,7 @@ app.post('/api/startup', async (req, res) => {
   try {
     res.json(await setStartup(!!req.body?.enabled));
   } catch (err) {
-    res.status(500).json({ error: err?.message || 'Falha ao configurar a inicialização.' });
+    res.status(500).json({ error: errMsg(err) || 'Falha ao configurar a inicialização.' });
   }
 });
 
@@ -418,22 +421,22 @@ app.get('/api/spotify/callback', async (req, res) => {
       '</body></html>'
     );
   } catch (err) {
-    res.status(500).send('Falha ao conectar o Spotify: ' + (err?.message || 'erro'));
+    res.status(500).send('Falha ao conectar o Spotify: ' + (errMsg(err) || 'erro'));
   }
 });
 
 app.get('/api/spotify/status', async (req, res) => {
   try { res.json(await spotifyStatus()); }
-  catch (err) { res.json({ configured: hasSpotify(), connected: false, error: err?.message }); }
+  catch (err) { res.json({ configured: hasSpotify(), connected: false, error: errMsg(err) }); }
 });
 
 // Controles de reprodução. Erros viram mensagem humana (ex.: sem dispositivo).
-const spotifyAction = (fn) => async (req, res) => {
+const spotifyAction = (fn: (req: Request) => Promise<string>) => async (req: Request, res: Response) => {
   try {
     const msg = await fn(req);
     res.json({ ok: true, message: msg });
   } catch (err) {
-    res.status(400).json({ ok: false, error: err?.message || 'Falha no Spotify.' });
+    res.status(400).json({ ok: false, error: errMsg(err) || 'Falha no Spotify.' });
   }
 };
 app.post('/api/spotify/play', spotifyAction((req) => spotifyPlay(req.body?.query || '')));
@@ -452,24 +455,24 @@ app.post('/api/commands', async (req, res) => {
     const cmd = await addCommand(req.body?.trigger, req.body?.action);
     res.json(cmd);
   } catch (err) {
-    res.status(400).json({ error: err?.message || 'Não consegui salvar.' });
+    res.status(400).json({ error: errMsg(err) || 'Não consegui salvar.' });
   }
 });
 
 app.put('/api/commands/:id', async (req, res) => {
-  const cmd = await updateCommand(req.params.id, req.body || {});
+  const cmd = await updateCommand(req.params.id!, req.body || {});
   if (!cmd) return res.status(404).json({ error: 'Comando não encontrado.' });
   res.json(cmd);
 });
 
 app.delete('/api/commands/:id', async (req, res) => {
-  const ok = await deleteCommand(req.params.id);
+  const ok = await deleteCommand(req.params.id!);
   res.json({ ok });
 });
 
 // Registra que um comando salvo foi disparado (contador de uso).
 app.post('/api/commands/:id/run', async (req, res) => {
-  const cmd = await markRun(req.params.id);
+  const cmd = await markRun(req.params.id!);
   res.json(cmd || { ok: false });
 });
 
@@ -481,7 +484,7 @@ app.get('/api/events', (req, res) => {
   res.flushHeaders?.();
   res.write(': conectado\n\n');
 
-  const onReminder = (reminder) => {
+  const onReminder = (reminder: unknown) => {
     res.write(`event: reminder\ndata: ${JSON.stringify(reminder)}\n\n`);
   };
   reminderEvents.on('reminder', onReminder);
@@ -498,7 +501,7 @@ app.get('/api/events', (req, res) => {
  * No aplicativo instalado, garante que exista um .env em %APPDATA%\Shadow para
  * o usuário colar a chave — senão ele abre o app e não tem onde escrever.
  */
-async function garantirEnvDoApp() {
+async function garantirEnvDoApp(): Promise<void> {
   if (!isPackagedApp || hasApiKey() || existsSync(ENV_PATH)) return;
   try {
     await mkdir(dirname(ENV_PATH), { recursive: true });
@@ -506,7 +509,7 @@ async function garantirEnvDoApp() {
     await copyFile(exemplo, ENV_PATH);
     console.log(`     Crie sua chave e cole em: ${ENV_PATH}`);
   } catch (err) {
-    console.error('[env]', err?.message || err);
+    console.error('[env]', errMsg(err));
   }
 }
 
@@ -514,7 +517,7 @@ const httpServer = createServer(app);
 // Sinalização WebRTC + chat em tempo real da área "Salas" (caminho /ws).
 attachSignaling(httpServer);
 
-async function start() {
+async function start(): Promise<void> {
   await garantirEnvDoApp();
   await initDb();
   await loadReminders();
@@ -549,7 +552,7 @@ async function start() {
 }
 
 // Não deixa o processo do Piper órfão quando o motor é desligado.
-for (const sinal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+for (const sinal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
   process.on(sinal, async () => {
     await shutdownLocal();
     process.exit(0);

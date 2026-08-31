@@ -12,7 +12,7 @@ export const communityRouter = Router();
 // pra atravessar firewalls/NAT quando as pessoas estão em redes diferentes)
 // entra por .env quando você subir um servidor TURN na VPS.
 communityRouter.get('/rtc-config', (req, res) => {
-  const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  const iceServers: Record<string, unknown>[] = [{ urls: 'stun:stun.l.google.com:19302' }];
   if (process.env.TURN_URL) {
     iceServers.push({
       urls: process.env.TURN_URL.split(',').map((s) => s.trim()),
@@ -45,18 +45,18 @@ communityRouter.post('/rooms', async (req, res) => {
 });
 
 communityRouter.put('/rooms/:id', async (req, res) => {
-  const room = await db().updateRoom(req.params.id, req.body || {});
+  const room = await db().updateRoom(req.params.id!, req.body || {});
   if (!room) return res.status(404).json({ error: 'Sala não encontrada.' });
   res.json(room);
 });
 
 communityRouter.delete('/rooms/:id', async (req, res) => {
-  res.json({ ok: await db().deleteRoom(req.params.id) });
+  res.json({ ok: await db().deleteRoom(req.params.id!) });
 });
 
 // ---- Canais ----
 communityRouter.post('/rooms/:id/channels', async (req, res) => {
-  const room = await db().getRoom(req.params.id);
+  const room = await db().getRoom(req.params.id!);
   if (!room) return res.status(404).json({ error: 'Sala não encontrada.' });
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Nome obrigatório.' });
@@ -68,11 +68,11 @@ communityRouter.post('/rooms/:id/channels', async (req, res) => {
 });
 
 communityRouter.delete('/channels/:id', async (req, res) => {
-  res.json({ ok: await db().deleteChannel(req.params.id) });
+  res.json({ ok: await db().deleteChannel(req.params.id!) });
 });
 
 // ---- Histórico de chat de um canal ----
 communityRouter.get('/channels/:id/messages', async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
-  res.json(await db().listMessages(req.params.id, limit));
+  res.json(await db().listMessages(req.params.id!, limit));
 });
