@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "files": [
+    "dist",
+    "public"
+  ],
   "scripts": {
     "dev": "tsx watch src/index.js",
     "start": "tsx src/index.js",

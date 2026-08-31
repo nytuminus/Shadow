@@ -16,7 +16,7 @@ const net = require('node:net');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..', '..');
-const SERVER_DIR = path.join(__dirname, '..', 'server');
+const SERVER_DIR = path.join(ROOT, 'apps', 'server');
 const PORT = Number(process.env.PORT) || 4577;
 const URL_APP = `http://localhost:${PORT}`;
 const ICON = path.join(SERVER_DIR, 'public', 'logo.png');

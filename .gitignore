@@ -1,6 +1,7 @@
 node_modules/
 .env
 apps/server/dist/
+deploy-server/
 apps/server/data/*.json
 apps/server/data/tts-cache/
 !apps/server/data/.gitkeep
