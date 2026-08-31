@@ -1,23 +1,28 @@
 import Phaser from 'phaser';
+import type { Direction, PlayerState } from '@shadow/shared';
+import type { OfficeSocket } from '../net/socket.js';
 
 const TILE_SIZE = 32;
 const MAP_KEY = 'map';
 const TILESET_IMAGE_KEY = 'placeholder-tileset';
 const PLAYER_KEY = 'player-placeholder';
 const SPEED = 160;
+const MOVE_SEND_MS = 100; // ~10Hz — mesmo ritmo do tick do servidor
 
 /**
- * Mapa placeholder + avatar local com WASD e colisão — ainda sem rede
- * (isso entra na próxima etapa, junto com o Socket.io).
- *
- * O tileset é gerado na hora (dois quadrados desenhados por código, viram
- * uma textura) em vez de carregado de um PNG: dá pra trocar por uma arte de
- * verdade depois sem mexer no resto do código, só apontando pro arquivo.
+ * Mapa + avatar local com WASD e colisão, sincronizado por Socket.io: manda
+ * a posição própria em intervalos fixos e desenha os outros jogadores a
+ * partir do snapshot do servidor (com um tween curto pra não "teleportar"
+ * de um snapshot pro outro).
  */
 export class OfficeScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
+  private socket?: OfficeSocket;
+  private remotePlayers = new Map<string, Phaser.GameObjects.Sprite>();
+  private currentDirection: Direction = 'down';
+  private moveSendTimer = 0;
 
   constructor() {
     super('office');
@@ -51,9 +56,15 @@ export class OfficeScene extends Phaser.Scene {
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as typeof this.wasd;
+
+    this.socket = this.registry.get('socket') as OfficeSocket | undefined;
+    if (this.socket) {
+      this.socket.on('players:snapshot', (players) => this.onSnapshot(players));
+      this.socket.on('player:left', ({ socketId }) => this.removeRemote(socketId));
+    }
   }
 
-  update(): void {
+  update(time: number, delta: number): void {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
     const left = this.cursors.left.isDown || this.wasd.A.isDown;
@@ -65,8 +76,52 @@ export class OfficeScene extends Phaser.Scene {
       (right ? 1 : 0) - (left ? 1 : 0),
       (down ? 1 : 0) - (up ? 1 : 0)
     );
-    if (dir.length() > 0) dir.normalize().scale(SPEED);
+    const moving = dir.length() > 0;
+    if (moving) {
+      dir.normalize();
+      this.currentDirection =
+        Math.abs(dir.x) > Math.abs(dir.y) ? (dir.x > 0 ? 'right' : 'left') : dir.y > 0 ? 'down' : 'up';
+      dir.scale(SPEED);
+    }
     body.setVelocity(dir.x, dir.y);
+
+    this.moveSendTimer += delta;
+    if (this.socket && this.moveSendTimer >= MOVE_SEND_MS) {
+      this.moveSendTimer = 0;
+      this.socket.emit('player:move', {
+        x: this.player.x,
+        y: this.player.y,
+        direction: this.currentDirection,
+        moving,
+      });
+    }
+  }
+
+  private onSnapshot(players: PlayerState[]): void {
+    const selfId = this.socket?.id;
+    const seen = new Set<string>();
+    for (const p of players) {
+      if (p.socketId === selfId) continue;
+      seen.add(p.socketId);
+      let sprite = this.remotePlayers.get(p.socketId);
+      if (!sprite) {
+        sprite = this.add.sprite(p.x, p.y, PLAYER_KEY).setTint(0x4ade80);
+        this.remotePlayers.set(p.socketId, sprite);
+      }
+      this.tweens.add({ targets: sprite, x: p.x, y: p.y, duration: MOVE_SEND_MS, ease: 'Linear' });
+    }
+    // Quem não veio nesse snapshot saiu do mapa (desconectou ou trocou de sala).
+    for (const [id, sprite] of this.remotePlayers) {
+      if (!seen.has(id)) {
+        sprite.destroy();
+        this.remotePlayers.delete(id);
+      }
+    }
+  }
+
+  private removeRemote(socketId: string): void {
+    this.remotePlayers.get(socketId)?.destroy();
+    this.remotePlayers.delete(socketId);
   }
 
   private createPlaceholderTileset(): void {

@@ -1,8 +1,15 @@
 import Phaser from 'phaser';
+import type { EmployeeInfo } from '@shadow/shared';
 import { OfficeScene } from './OfficeScene.js';
+import type { OfficeSocket } from '../net/socket.js';
 
-export function createGame(parent: HTMLElement): Phaser.Game {
-  return new Phaser.Game({
+export interface GameOptions {
+  socket: OfficeSocket;
+  employee: EmployeeInfo;
+}
+
+export function createGame(parent: HTMLElement, options: GameOptions): Phaser.Game {
+  const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
     width: 960,
@@ -15,4 +22,8 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     },
     scene: [OfficeScene],
   });
+  // Registry sobrevive à troca de cena e existe antes do create() da 1ª cena rodar.
+  game.registry.set('socket', options.socket);
+  game.registry.set('employee', options.employee);
+  return game;
 }
