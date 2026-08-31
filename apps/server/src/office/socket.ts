@@ -6,6 +6,7 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server as SocketIOServer, type Socket } from 'socket.io';
 import type {
+  ChatMessage,
   ClientToServerEvents,
   Direction,
   InterServerEvents,
@@ -15,6 +16,18 @@ import type {
 } from '@shadow/shared';
 import { verifyToken } from './auth.js';
 import { removePlayer as removeFromProximity, updateProximity } from './proximity.js';
+import { db, type DbOfficeMessage } from '../db/index.js';
+
+const CHAT_HISTORY_LIMIT = 50;
+const CHAT_MAX_LEN = 2000;
+
+const toChatMessage = (m: DbOfficeMessage): ChatMessage => ({
+  id: m.id,
+  employeeId: m.userId,
+  name: m.userName || 'Alguém',
+  text: m.text,
+  createdAt: m.createdAt,
+});
 
 const MAP_ID = 'escritorio'; // único mapa no MVP; o campo já existe pra quando houver mais
 const TICK_MS = 100; // ~10Hz — throttle tanto do broadcast quanto da checagem de proximidade
@@ -61,6 +74,26 @@ export function attachOfficeSocket(httpServer: HttpServer): OfficeServer {
     };
     players.set(socket.id, player);
     socket.join(MAP_ID);
+
+    db()
+      .listOfficeMessages(MAP_ID, CHAT_HISTORY_LIMIT)
+      .then((history) => socket.emit('chat:history', history.map(toChatMessage)))
+      .catch(() => {}); // sem histórico: chat só não abre com nada — não trava a entrada
+
+    socket.on('chat:send', async ({ text }) => {
+      const clean = String(text || '').trim().slice(0, CHAT_MAX_LEN);
+      if (!clean) return;
+      try {
+        const saved = await db().addOfficeMessage(MAP_ID, {
+          userId: socket.data.employeeId,
+          userName: socket.data.name,
+          text: clean,
+        });
+        io.to(MAP_ID).emit('chat:message', toChatMessage(saved));
+      } catch (err) {
+        console.error('[office] chat:send falhou:', err instanceof Error ? err.message : err);
+      }
+    });
 
     socket.on('player:move', (payload) => {
       const p = players.get(socket.id);

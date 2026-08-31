@@ -14,7 +14,7 @@
 
 import { nanoid } from 'nanoid';
 import type { Pool } from 'mysql2/promise';
-import type { ChannelType, DbChannel, DbMessage, DbRoom, DbStore, DbUser, Employee } from './types.js';
+import type { ChannelType, DbChannel, DbMessage, DbOfficeMessage, DbRoom, DbStore, DbUser, Employee } from './types.js';
 
 function readConfig() {
   if (process.env.DATABASE_URL) {
@@ -98,6 +98,18 @@ export function makeMysqlStore(): DbStore {
         name VARCHAR(120) NOT NULL,
         passwordHash VARCHAR(120) NOT NULL,
         createdAt DATETIME NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+      // Chat do escritório 2D é por MAPA, não por canal das Salas — tabela
+      // própria, sem FK pra channels (o mapa nem é uma linha em lugar nenhum).
+      await q(`CREATE TABLE IF NOT EXISTS office_messages (
+        id VARCHAR(24) PRIMARY KEY,
+        mapId VARCHAR(60) NOT NULL,
+        userId VARCHAR(24),
+        userName VARCHAR(120),
+        text TEXT NOT NULL,
+        createdAt DATETIME NOT NULL,
+        INDEX idx_map (mapId, createdAt)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
       // Semente inicial.
@@ -196,6 +208,17 @@ export function makeMysqlStore(): DbStore {
     },
     async listMessages(channelId, limit = 50) {
       const rows = await q<DbMessage>('SELECT * FROM messages WHERE channelId=? ORDER BY createdAt DESC LIMIT ?', [channelId, Number(limit)]);
+      return rows.reverse();
+    },
+
+    async addOfficeMessage(mapId, { userId = null, userName = null, text }) {
+      const id = nanoid(12);
+      const ts = new Date();
+      await q('INSERT INTO office_messages (id,mapId,userId,userName,text,createdAt) VALUES (?,?,?,?,?,?)', [id, mapId, userId, userName, text, ts]);
+      return { id, mapId, userId, userName, text, createdAt: ts.toISOString() };
+    },
+    async listOfficeMessages(mapId, limit = 50) {
+      const rows = await q<DbOfficeMessage>('SELECT * FROM office_messages WHERE mapId=? ORDER BY createdAt DESC LIMIT ?', [mapId, Number(limit)]);
       return rows.reverse();
     },
   };

@@ -10,7 +10,7 @@
 // É CommonJS (.cjs) de propósito: o package.json do projeto é "type": "module"
 // e o processo principal do Electron fica mais previsível assim.
 
-const { app, BrowserWindow, Tray, Menu, shell, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, shell, ipcMain, nativeImage, desktopCapturer } = require('electron');
 const { spawn } = require('node:child_process');
 const net = require('node:net');
 const path = require('node:path');
@@ -153,6 +153,16 @@ function liberarPermissoes(ses) {
   ses.setPermissionCheckHandler((_wc, permissao, origem) =>
     PERMISSOES_OK.has(permissao) && daNossaCasa(origem)
   );
+
+  // getDisplayMedia() (compartilhar tela) NÃO passa pelos handlers acima — o
+  // Electron exige este, separado, senão o pedido trava sem erro nenhum.
+  // MVP: pega a tela principal direto, sem escolher janela/tela específica.
+  ses.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer
+      .getSources({ types: ['screen'] })
+      .then((sources) => callback({ video: sources[0], audio: 'loopback' }))
+      .catch(() => callback({}));
+  });
 }
 
 function criarJanela() {

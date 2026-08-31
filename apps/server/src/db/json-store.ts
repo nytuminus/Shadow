@@ -10,18 +10,19 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 import { dataFile, ensureDataDir } from '../data-dir.js';
-import type { DbChannel, DbMessage, DbRoom, DbStore, DbUser, Employee } from './types.js';
+import type { DbChannel, DbMessage, DbOfficeMessage, DbRoom, DbStore, DbUser, Employee } from './types.js';
 
 interface JsonDb {
   rooms: DbRoom[];
   channels: DbChannel[];
   messages: DbMessage[];
   users: DbUser[];
+  officeMessages: DbOfficeMessage[];
 }
 
 const FILE = () => dataFile('community.json');
 
-const empty = (): JsonDb => ({ rooms: [], channels: [], messages: [], users: [] });
+const empty = (): JsonDb => ({ rooms: [], channels: [], messages: [], users: [], officeMessages: [] });
 
 let cache: JsonDb | null = null;
 let writeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -215,6 +216,27 @@ export const jsonStore: DbStore = {
     const db = await load();
     return db.messages
       .filter((m) => m.channelId === channelId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .slice(-limit);
+  },
+
+  // ---- Chat global do escritório 2D (por mapa, sem canal) ----
+  async addOfficeMessage(mapId, { userId = null, userName = null, text }) {
+    const db = await load();
+    const msg: DbOfficeMessage = { id: nanoid(12), mapId, userId, userName, text, createdAt: now() };
+    db.officeMessages.push(msg);
+    const doMapa = db.officeMessages.filter((m) => m.mapId === mapId);
+    if (doMapa.length > 500) {
+      const excedente = doMapa.slice(0, doMapa.length - 500).map((m) => m.id);
+      db.officeMessages = db.officeMessages.filter((m) => !excedente.includes(m.id));
+    }
+    persist();
+    return msg;
+  },
+  async listOfficeMessages(mapId, limit = 50) {
+    const db = await load();
+    return db.officeMessages
+      .filter((m) => m.mapId === mapId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       .slice(-limit);
   },

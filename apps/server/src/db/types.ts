@@ -38,6 +38,16 @@ export interface DbMessage {
   createdAt: string;
 }
 
+/** Chat global do escritório 2D — por mapa, sem o conceito de "canal" das Salas. */
+export interface DbOfficeMessage {
+  id: string;
+  mapId: string;
+  userId: string | null;
+  userName: string | null;
+  text: string;
+  createdAt: string;
+}
+
 export interface RoomPatch {
   name?: string;
   icon?: string;
@@ -79,4 +89,10 @@ export interface DbStore {
     message: { userId?: string | null; userName?: string | null; text: string }
   ): Promise<DbMessage>;
   listMessages(channelId: string, limit?: number): Promise<DbMessage[]>;
+
+  addOfficeMessage(
+    mapId: string,
+    message: { userId?: string | null; userName?: string | null; text: string }
+  ): Promise<DbOfficeMessage>;
+  listOfficeMessages(mapId: string, limit?: number): Promise<DbOfficeMessage[]>;
 }

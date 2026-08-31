@@ -33,9 +33,20 @@ export interface WebrtcSignalIn {
   data: unknown;
 }
 
+// Chat de texto global do escritório (todo mundo no mapa vê). Persistido
+// pela mesma camada de banco das Salas (mapId faz o papel de channelId).
+export interface ChatMessage {
+  id: string;
+  employeeId: string | null;
+  name: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface ClientToServerEvents {
   'player:move': (payload: MovePayload) => void;
   'webrtc:signal': (payload: WebrtcSignalOut) => void;
+  'chat:send': (payload: { text: string }) => void;
 }
 
 export interface ServerToClientEvents {
@@ -44,6 +55,8 @@ export interface ServerToClientEvents {
   'proximity:enter': (payload: ProximityPayload) => void;
   'proximity:leave': (payload: ProximityPayload) => void;
   'webrtc:signal': (payload: WebrtcSignalIn) => void;
+  'chat:history': (messages: ChatMessage[]) => void;
+  'chat:message': (message: ChatMessage) => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
