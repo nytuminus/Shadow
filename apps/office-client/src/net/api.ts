@@ -18,3 +18,10 @@ export async function me(token: string): Promise<{ employee: EmployeeInfo }> {
   if (!res.ok) throw new Error('Sessão expirada.');
   return res.json();
 }
+
+/** Reaproveita o mesmo endpoint que as Salas antigas usavam (STUN + TURN do .env). */
+export async function getRtcConfig(): Promise<{ iceServers: RTCIceServer[] }> {
+  const res = await fetch('/api/community/rtc-config');
+  if (!res.ok) throw new Error('Falha ao buscar configuração de rede.');
+  return res.json();
+}

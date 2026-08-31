@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import type { Direction, PlayerState } from '@shadow/shared';
 import type { OfficeSocket } from '../net/socket.js';
+import type { CallManager } from '../call/CallManager.js';
+import type { VideoOverlay } from '../call/VideoOverlay.js';
 
 const TILE_SIZE = 32;
 const MAP_KEY = 'map';
@@ -13,13 +15,16 @@ const MOVE_SEND_MS = 100; // ~10Hz — mesmo ritmo do tick do servidor
  * Mapa + avatar local com WASD e colisão, sincronizado por Socket.io: manda
  * a posição própria em intervalos fixos e desenha os outros jogadores a
  * partir do snapshot do servidor (com um tween curto pra não "teleportar"
- * de um snapshot pro outro).
+ * de um snapshot pro outro). Proximidade liga/desliga a chamada por peer
+ * (CallManager) e o tile de vídeo de cada um segue o avatar na tela.
  */
 export class OfficeScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private socket?: OfficeSocket;
+  private callManager?: CallManager;
+  private videoOverlay?: VideoOverlay;
   private remotePlayers = new Map<string, Phaser.GameObjects.Sprite>();
   private currentDirection: Direction = 'down';
   private moveSendTimer = 0;
@@ -58,9 +63,21 @@ export class OfficeScene extends Phaser.Scene {
     this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as typeof this.wasd;
 
     this.socket = this.registry.get('socket') as OfficeSocket | undefined;
+    this.callManager = this.registry.get('callManager') as CallManager | undefined;
+    this.videoOverlay = this.registry.get('videoOverlay') as VideoOverlay | undefined;
+
     if (this.socket) {
       this.socket.on('players:snapshot', (players) => this.onSnapshot(players));
       this.socket.on('player:left', ({ socketId }) => this.removeRemote(socketId));
+      this.socket.on('proximity:enter', ({ peerId }) => { void this.callManager?.connectTo(peerId); });
+      this.socket.on('proximity:leave', ({ peerId }) => {
+        this.callManager?.disconnectFrom(peerId);
+        this.videoOverlay?.remove(peerId);
+      });
+    }
+    if (this.callManager) {
+      this.callManager.onPeerStream = (peerId, stream) => this.videoOverlay?.setStream(peerId, stream);
+      this.callManager.onPeerRemoved = (peerId) => this.videoOverlay?.remove(peerId);
     }
   }
 
@@ -95,6 +112,27 @@ export class OfficeScene extends Phaser.Scene {
         moving,
       });
     }
+
+    this.updateVideoTilePositions();
+  }
+
+  /**
+   * Projeta a posição de cada jogador remoto (mundo) pra tela, usando a
+   * transformação da câmera — feito aqui, no update() do próprio Phaser, pra
+   * nunca ficar um frame atrasado em relação ao desenho do canvas.
+   *
+   * Simplificação de MVP: assume canvas 1:1 com o CSS (Scale Manager em modo
+   * padrão, sem responsivo). Se um dia o jogo passar a escalar com a janela,
+   * isso precisa entrar na conta (canvas.getBoundingClientRect() + escala).
+   */
+  private updateVideoTilePositions(): void {
+    if (!this.videoOverlay) return;
+    const cam = this.cameras.main;
+    for (const [peerId, sprite] of this.remotePlayers) {
+      const screenX = (sprite.x - cam.scrollX) * cam.zoom;
+      const screenY = (sprite.y - cam.scrollY) * cam.zoom;
+      this.videoOverlay.setPosition(peerId, screenX, screenY);
+    }
   }
 
   private onSnapshot(players: PlayerState[]): void {
@@ -115,6 +153,7 @@ export class OfficeScene extends Phaser.Scene {
       if (!seen.has(id)) {
         sprite.destroy();
         this.remotePlayers.delete(id);
+        this.videoOverlay?.remove(id);
       }
     }
   }
@@ -122,6 +161,7 @@ export class OfficeScene extends Phaser.Scene {
   private removeRemote(socketId: string): void {
     this.remotePlayers.get(socketId)?.destroy();
     this.remotePlayers.delete(socketId);
+    this.videoOverlay?.remove(socketId);
   }
 
   private createPlaceholderTileset(): void {

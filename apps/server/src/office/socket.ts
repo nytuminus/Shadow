@@ -71,6 +71,12 @@ export function attachOfficeSocket(httpServer: HttpServer): OfficeServer {
       p.moving = !!payload?.moving;
     });
 
+    // Repasse cru de sinalização WebRTC — o servidor não olha pra dentro,
+    // só entrega pro peer certo (igual o antigo /ws das Salas fazia).
+    socket.on('webrtc:signal', ({ to, data }) => {
+      io.to(to).emit('webrtc:signal', { from: socket.id, data });
+    });
+
     socket.on('disconnect', () => {
       players.delete(socket.id);
       const changes = removeFromProximity(socket.id);

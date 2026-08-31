@@ -21,8 +21,21 @@ export interface ProximityPayload {
   peerId: string; // socketId do outro jogador
 }
 
+// Repasse cru de sinalização WebRTC (offer/answer/ICE) — o servidor NÃO olha
+// pra dentro de `data`, só entrega pro peer certo. Mesmo papel do antigo
+// `case 'signal'` do /ws das Salas, agora ponto-a-ponto por proximidade.
+export interface WebrtcSignalOut {
+  to: string; // socketId do destinatário
+  data: unknown;
+}
+export interface WebrtcSignalIn {
+  from: string; // socketId de quem mandou
+  data: unknown;
+}
+
 export interface ClientToServerEvents {
   'player:move': (payload: MovePayload) => void;
+  'webrtc:signal': (payload: WebrtcSignalOut) => void;
 }
 
 export interface ServerToClientEvents {
@@ -30,6 +43,7 @@ export interface ServerToClientEvents {
   'player:left': (payload: { socketId: string }) => void;
   'proximity:enter': (payload: ProximityPayload) => void;
   'proximity:leave': (payload: ProximityPayload) => void;
+  'webrtc:signal': (payload: WebrtcSignalIn) => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
