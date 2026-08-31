@@ -12,7 +12,7 @@ import { GoogleGenAI } from '@google/genai';
 import { config, hasApiKey } from './config.js';
 import { isQuotaError, isOverloadError, isDailyQuota } from './brain.js';
 
-let _ai = null;
+let _ai: GoogleGenAI | null = null;
 const getAI = () => (_ai ??= new GoogleGenAI({ apiKey: config.apiKey }));
 export const resetSttAI = () => { _ai = null; };
 
@@ -22,9 +22,9 @@ export const resetSttAI = () => { _ai = null; };
 const MODELOS = [
   process.env.SHADOW_STT_MODEL || 'gemini-flash-lite-latest',
   config.model,
-].filter((m, i, a) => m && a.indexOf(m) === i);
+].filter((m, i, a): m is string => !!m && a.indexOf(m) === i);
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // A palavra de ativação é o ponto fraco de transcrever: os modelos ouvem
 // "Shadow" e escrevem "Cadê", "Gato", "Cadu". Se dependêssemos do texto, metade
@@ -57,12 +57,16 @@ const FORMATO = {
   required: ['texto', 'chamou'],
 };
 
+export interface Transcription {
+  text: string;
+  calledByName: boolean;
+}
+
 /**
- * @param {Buffer} audio  trecho de áudio (webm/opus, ogg ou mp4)
- * @param {string} mime   tipo do áudio enviado pelo navegador
- * @returns {Promise<{text: string, calledByName: boolean}>}
+ * @param audio trecho de áudio (webm/opus, ogg ou mp4)
+ * @param mime tipo do áudio enviado pelo navegador
  */
-export async function transcribe(audio, mime = 'audio/webm') {
+export async function transcribe(audio: Buffer, mime = 'audio/webm'): Promise<Transcription> {
   if (!hasApiKey()) throw new Error('Sem chave da API para transcrever.');
   if (!audio?.length) return { text: '', calledByName: false };
 
@@ -78,8 +82,8 @@ export async function transcribe(audio, mime = 'audio/webm') {
 
   // Uma tentativa por modelo; sobrecarga passa para o próximo em vez de
   // devolver erro para quem só quer ser ouvido.
-  let ultimoErro;
-  let res = null;
+  let ultimoErro: unknown;
+  let res: any = null;
   for (const model of MODELOS) {
     let cotaAcabou = false;
     for (let tentativa = 0; tentativa < 2; tentativa++) {
@@ -92,11 +96,11 @@ export async function transcribe(audio, mime = 'audio/webm') {
             responseMimeType: 'application/json',
             responseSchema: FORMATO,
           },
-        });
+        } as any);
         break;
       } catch (err) {
         ultimoErro = err;
-        const msg = String(err?.message || err);
+        const msg = String((err as any)?.message || err);
         if (!isOverloadError(msg) && !isQuotaError(msg)) throw err;
         // Cota do dia acabou neste modelo: insistir só queima tempo.
         if (isQuotaError(msg) && isDailyQuota(msg)) { cotaAcabou = true; break; }
@@ -109,7 +113,7 @@ export async function transcribe(audio, mime = 'audio/webm') {
   }
   if (!res) throw ultimoErro || new Error('Falha ao transcrever.');
 
-  let dados;
+  let dados: any;
   try {
     dados = JSON.parse((res.text || '').trim());
   } catch {

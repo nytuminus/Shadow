@@ -1,6 +1,6 @@
 // Voz do Shadow — ponto único de síntese, com dois motores e cache em disco.
 //
-//   local  → Piper, aqui no PC (server/tts-local.js). ~0,3s, offline, de graça.
+//   local  → Piper, aqui no PC (tts-local.ts). ~0,3s, offline, de graça.
 //   gemini → TTS do Gemini. Mais bonita e expressiva, mas ~3s e gasta cota.
 //
 // O navegador (Web Speech) só tem vozes antigas do Windows, que soam robóticas —
@@ -20,8 +20,14 @@ const CACHE_DIR = join(__dirname, '..', 'data', 'tts-cache');
 const MAX_CACHE_FILES = 120;
 const MAX_CHARS = 900;
 
+export interface VoiceOption {
+  id: string;
+  label: string;
+  male: boolean;
+}
+
 // Vozes do Gemini oferecidas na interface (as mais adequadas a um assistente).
-export const VOICES = [
+export const VOICES: VoiceOption[] = [
   { id: 'Charon', label: 'Charon — grave e firme (padrão)', male: true },
   { id: 'Algenib', label: 'Algenib — rouca, áspera', male: true },
   { id: 'Enceladus', label: 'Enceladus — baixa, quase sussurrada', male: true },
@@ -44,7 +50,7 @@ const STYLE =
   'confiante e discreto: voz natural e conversada, ritmo tranquilo, entonação ' +
   'humana, um leve toque de ironia elegante. Não leia estas instruções.\n\n';
 
-let _ai = null;
+let _ai: GoogleGenAI | null = null;
 const getAI = () => (_ai ??= new GoogleGenAI({ apiKey: config.apiKey }));
 /** Chamado quando a chave muda em tempo de execução (config.saveApiKey). */
 export const resetTtsAI = () => { _ai = null; };
@@ -54,14 +60,14 @@ export const resetTtsAI = () => { _ai = null; };
 let blockedUntil = 0;
 export const isBlocked = () => Date.now() < blockedUntil;
 
-const memCache = new Map();
+const memCache = new Map<string, Buffer>();
 
-function keyFor(text, engine, voice) {
+function keyFor(text: string, engine: string, voice: string): string {
   return createHash('sha1').update(`${engine}|${voice}|v2|${text}`).digest('hex');
 }
 
 /** Empacota PCM 16-bit cru num WAV que o navegador toca direto. */
-function wavFromPcm(pcm, sampleRate) {
+function wavFromPcm(pcm: Buffer, sampleRate: number): Buffer {
   const h = Buffer.alloc(44);
   h.write('RIFF', 0);
   h.writeUInt32LE(36 + pcm.length, 4);
@@ -79,8 +85,8 @@ function wavFromPcm(pcm, sampleRate) {
   return Buffer.concat([h, pcm]);
 }
 
-async function readCache(key) {
-  if (memCache.has(key)) return memCache.get(key);
+async function readCache(key: string): Promise<Buffer | null> {
+  if (memCache.has(key)) return memCache.get(key)!;
   try {
     const buf = await readFile(join(CACHE_DIR, `${key}.wav`));
     memCache.set(key, buf);
@@ -90,7 +96,7 @@ async function readCache(key) {
   }
 }
 
-async function writeCache(key, buf) {
+async function writeCache(key: string, buf: Buffer): Promise<void> {
   memCache.set(key, buf);
   try {
     await mkdir(CACHE_DIR, { recursive: true });
@@ -102,8 +108,8 @@ async function writeCache(key, buf) {
 }
 
 // Mantém a pasta de cache enxuta, descartando os arquivos mais antigos.
-async function pruneCache() {
-  const files = await readdir(CACHE_DIR).catch(() => []);
+async function pruneCache(): Promise<void> {
+  const files = await readdir(CACHE_DIR).catch(() => [] as string[]);
   if (files.length <= MAX_CACHE_FILES) return;
   const info = await Promise.all(
     files.map(async (f) => {
@@ -118,15 +124,19 @@ async function pruneCache() {
   }
 }
 
-/**
- * Gera (ou recupera do cache) o áudio de uma fala.
- * @param {string} text
- * @param {{engine?: 'local'|'gemini', voice?: string}} opts
- * @returns {Promise<Buffer>} WAV pronto para tocar
- */
-export async function synthesize(text, opts = {}) {
+export interface SynthesizeOptions {
+  engine?: 'local' | 'gemini';
+  voice?: string;
+}
+
+interface QuotaError extends Error {
+  quota: true;
+}
+
+/** Gera (ou recupera do cache) o áudio de uma fala. Devolve um WAV pronto pra tocar. */
+export async function synthesize(text: string, opts: SynthesizeOptions = {}): Promise<Buffer> {
   const engine = opts.engine === 'gemini' ? 'gemini' : 'local';
-  const voice = VALID.has(opts.voice) ? opts.voice : config.ttsVoice;
+  const voice = opts.voice && VALID.has(opts.voice) ? opts.voice : config.ttsVoice;
   // NFC: "é" digitado de duas formas diferentes vira a mesma chave de cache.
   const clean = String(text || '').normalize('NFC').trim().slice(0, MAX_CHARS);
   if (!clean) throw new Error('Texto vazio.');
@@ -141,19 +151,23 @@ export async function synthesize(text, opts = {}) {
     return wav;
   }
 
-  if (isBlocked()) throw Object.assign(new Error('TTS em espera de cota.'), { quota: true });
+  if (isBlocked()) {
+    const err = new Error('TTS em espera de cota.') as QuotaError;
+    err.quota = true;
+    throw err;
+  }
 
   try {
-    const res = await getAI().models.generateContent({
+    const res: any = await getAI().models.generateContent({
       model: config.ttsModel,
       contents: [{ parts: [{ text: STYLE + clean }] }],
       config: {
         responseModalities: ['AUDIO'],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
       },
-    });
+    } as any);
 
-    const part = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);
+    const part = res.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
     if (!part) throw new Error('O modelo não devolveu áudio.');
 
     const rate = Number(/rate=(\d+)/.exec(part.inlineData.mimeType || '')?.[1]) || 24000;
@@ -161,10 +175,12 @@ export async function synthesize(text, opts = {}) {
     await writeCache(key, wav);
     return wav;
   } catch (err) {
-    const msg = String(err?.message || err);
+    const msg = String((err as any)?.message || err);
     if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) {
       blockedUntil = Date.now() + 90_000; // dá um tempo antes de tentar de novo
-      throw Object.assign(new Error('Cota de voz esgotada.'), { quota: true });
+      const quotaErr = new Error('Cota de voz esgotada.') as QuotaError;
+      quotaErr.quota = true;
+      throw quotaErr;
     }
     throw err;
   }
@@ -174,7 +190,7 @@ export async function synthesize(text, opts = {}) {
  * Deixa uma fala pronta no cache, sem bloquear o boot.
  * Usado com o bordão, para ele sair instantaneamente.
  */
-export function warmUp(text, opts) {
+export function warmUp(text: string, opts?: SynthesizeOptions): void {
   setTimeout(() => {
     synthesize(text, opts).catch(() => {});
   }, 1500);

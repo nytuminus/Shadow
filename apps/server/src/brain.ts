@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, type Content } from '@google/genai';
 import { config, CATCHPHRASE, hasApiKey } from './config.js';
 import { functionDeclarations } from './tools/definitions.js';
 import {
@@ -16,7 +16,7 @@ import { searchWeb } from './tools/web.js';
 import { getMetricsSummary } from './tools/metrics.js';
 import { getWeatherSummary } from './tools/weather.js';
 import { findCommand, markRun } from './tools/commands.js';
-import { getLolSummary } from './tools/lol.js';
+import { getLolSummary, type LolState, type RosterPlayer } from './tools/lol.js';
 import {
   play as spotifyPlay,
   pause as spotifyPause,
@@ -26,28 +26,30 @@ import {
   isConnected as spotifyConnected,
 } from './tools/spotify.js';
 
+export type OnEvent = (event: Record<string, unknown>) => void;
+
 // Cliente criado sob demanda (só quando já existe uma chave), para não
 // poluir o console com avisos na inicialização sem chave configurada.
-let _ai = null;
-function getAI() {
+let _ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
   if (!_ai) _ai = new GoogleGenAI({ apiKey: config.apiKey });
   return _ai;
 }
 /** Chamado quando a chave muda em tempo de execução (config.saveApiKey). */
 export const resetAI = () => { _ai = null; };
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Detecta os dois erros temporários que valem uma nova tentativa:
 //   - 429: limite de uso do plano grátis (o servidor sugere quanto esperar)
 //   - 503: modelo sobrecarregado ("high demand" / UNAVAILABLE / overloaded)
-export const isQuotaError = (msg) => /429|RESOURCE_EXHAUSTED|quota/i.test(String(msg));
-export const isOverloadError = (msg) =>
+export const isQuotaError = (msg: unknown): boolean => /429|RESOURCE_EXHAUSTED|quota/i.test(String(msg));
+export const isOverloadError = (msg: unknown): boolean =>
   /\b503\b|UNAVAILABLE|overloaded|high demand/i.test(String(msg));
 
 // Limite DIÁRIO é diferente de limite por minuto: esperar não adianta, ele só
 // volta na virada do dia. Dá para saber pelo "quotaId" que a API devolve.
-export const isDailyQuota = (msg) => /PerDay/i.test(String(msg));
+export const isDailyQuota = (msg: unknown): boolean => /PerDay/i.test(String(msg));
 
 // Modelos, em ordem de preferência. Cada modelo tem cota PRÓPRIA no plano
 // grátis — por isso, quando o principal acaba, o reserva ainda funciona.
@@ -57,13 +59,13 @@ const MODELOS = [config.model, config.fallbackModel].filter(
 
 // Modelos que já bateram no teto do dia. Guardamos até quando ignorá-los,
 // para não gastar 24 segundos de espera a cada pergunta.
-const semCotaAte = new Map();
+const semCotaAte = new Map<string, number>();
 
 const agoraMs = () => Date.now();
-const temCota = (modelo) => (semCotaAte.get(modelo) || 0) < agoraMs();
+const temCota = (modelo: string) => (semCotaAte.get(modelo) || 0) < agoraMs();
 
 /** Meia-noite no Pacífico (quando o plano grátis reseta), em ms. */
-function proximoResetDiario() {
+function proximoResetDiario(): number {
   const agora = new Date();
   // O reset é 00:00 no fuso PT (UTC-7/-8). Sem depender de biblioteca, usamos
   // 08:00 UTC como referência — erra por no máximo uma hora, e o pior caso é
@@ -74,16 +76,16 @@ function proximoResetDiario() {
 }
 
 /** Qual modelo está valendo agora (para a interface mostrar). */
-export const modeloAtivo = () => MODELOS.find(temCota) || MODELOS[0];
+export const modeloAtivo = (): string => MODELOS.find(temCota) || MODELOS[0]!;
 
 /**
  * Gera conteúdo com retry em sobrecarga (503) e limite por minuto (429), e
  * TROCA DE MODELO quando o principal esgota a cota do dia.
  */
-async function generate(params, onEvent = () => {}) {
-  const livres = MODELOS.filter(temCota);
-  const candidatos = livres.length ? livres : [MODELOS[0]]; // nenhum livre: tenta o principal mesmo
-  let ultimoErro;
+async function generate(params: Record<string, unknown>, onEvent: OnEvent = () => {}) {
+  const livres = MODELOS.filter((m): m is string => !!m && temCota(m));
+  const candidatos = livres.length ? livres : [MODELOS[0]!]; // nenhum livre: tenta o principal mesmo
+  let ultimoErro: unknown;
   let avisouReserva = false;
 
   for (let rodada = 0; rodada < 3; rodada++) {
@@ -98,10 +100,10 @@ async function generate(params, onEvent = () => {}) {
         onEvent({ type: 'status', text: 'Modelo principal ocupado — usando o reserva…' });
       }
       try {
-        return await getAI().models.generateContent({ ...params, model });
+        return await getAI().models.generateContent({ ...params, model } as any);
       } catch (err) {
         ultimoErro = err;
-        const msg = String(err?.message || err);
+        const msg = String((err as any)?.message || err);
         const quota = isQuotaError(msg);
         const overload = isOverloadError(msg);
         if (!quota && !overload) throw err; // erro de verdade: não insiste
@@ -114,7 +116,7 @@ async function generate(params, onEvent = () => {}) {
         }
         if (quota) {
           const m = msg.match(/(\d+(?:\.\d+)?)s/);
-          segundosSugeridos = Math.max(segundosSugeridos, m ? Math.ceil(parseFloat(m[1])) + 1 : 6);
+          segundosSugeridos = Math.max(segundosSugeridos, m ? Math.ceil(parseFloat(m[1]!)) + 1 : 6);
         }
       }
     }
@@ -134,32 +136,32 @@ async function generate(params, onEvent = () => {}) {
 }
 
 // Histórico da conversa em memória (app local de um usuário só).
-let history = [];
+let history: Content[] = [];
 
 // Teto do histórico: como o Shadow fica ligado o dia todo, sem isto cada
 // pergunta reenviaria a conversa inteira — mais lenta e mais cara a cada hora.
 const MAX_HISTORICO = 24; // ~12 idas e vindas
 
-function podarHistorico() {
+function podarHistorico(): void {
   if (history.length <= MAX_HISTORICO) return;
   history = history.slice(-MAX_HISTORICO);
   // O corte não pode deixar no começo uma resposta de ferramenta sem a chamada
   // dela, nem uma fala do modelo: a API espera o histórico começando no usuário.
   while (
     history.length &&
-    (history[0].role === 'model' || history[0].parts?.some((p) => p.functionResponse))
+    (history[0]!.role === 'model' || history[0]!.parts?.some((p) => 'functionResponse' in p))
   ) {
     history.shift();
   }
 }
 
-export function resetConversation() {
+export function resetConversation(): void {
   history = [];
 }
 
 // ---------- Bordão: "você tá aí?" → resposta fixa ----------
 
-const norm = (s) =>
+const norm = (s: string): string =>
   String(s)
     .toLowerCase()
     .normalize('NFD')
@@ -178,7 +180,7 @@ const PRESENCE = [
 ];
 
 /** Detecta as várias formas de perguntar "você está aí?". */
-export function isPresenceQuestion(text) {
+export function isPresenceQuestion(text: string): boolean {
   const full = norm(text);
   if (!full) return false;
   // Tira o nome do começo: "shadow, você tá aí?" → "voce ta ai"
@@ -193,7 +195,7 @@ export function isPresenceQuestion(text) {
 
 export { CATCHPHRASE };
 
-function systemPrompt() {
+function systemPrompt(): string {
   const agora = new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
     dateStyle: 'full',
@@ -217,7 +219,7 @@ Regras de resposta (MUITO IMPORTANTE — suas respostas serão FALADAS em voz al
 - Seja direto: faça o que foi pedido e confirme. Não pergunte demais nem enrole.`;
 }
 
-async function executeTool(name, args) {
+async function executeTool(name: string, args: any): Promise<string> {
   try {
     switch (name) {
       case 'open_application':
@@ -281,11 +283,11 @@ async function executeTool(name, args) {
         return `Ferramenta desconhecida: ${name}`;
     }
   } catch (err) {
-    return `Erro ao executar ${name}: ${err.message}`;
+    return `Erro ao executar ${name}: ${err instanceof Error ? err.message : err}`;
   }
 }
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<string, string> = {
   open_application: 'Abrindo aplicativo…',
   open_website: 'Abrindo site…',
   open_folder: 'Abrindo pasta…',
@@ -303,13 +305,11 @@ const STATUS_LABELS = {
   web_search: 'Pesquisando na web…',
 };
 
-/**
- * Processa uma mensagem do usuário.
- * @param {string} userText
- * @param {(event: object) => void} onEvent
- * @returns {Promise<{reply: string, actions: string[]}>}
- */
-export async function processMessage(userText, onEvent = () => {}) {
+/** Processa uma mensagem do usuário. */
+export async function processMessage(
+  userText: string,
+  onEvent: OnEvent = () => {}
+): Promise<{ reply: string; actions: string[] }> {
   podarHistorico();
   history.push({ role: 'user', parts: [{ text: userText }] });
 
@@ -319,7 +319,7 @@ export async function processMessage(userText, onEvent = () => {}) {
     return { reply: CATCHPHRASE, actions: [] };
   }
 
-  const actions = [];
+  const actions: string[] = [];
   let finalText = '';
   let guard = 0;
   let searchCount = 0;
@@ -328,7 +328,7 @@ export async function processMessage(userText, onEvent = () => {}) {
     while (guard++ < 6) {
       onEvent({ type: 'status', text: 'Pensando…' });
 
-      const response = await generate(
+      const response: any = await generate(
         {
           model: config.model,
           contents: history,
@@ -341,7 +341,7 @@ export async function processMessage(userText, onEvent = () => {}) {
         onEvent
       );
 
-      const modelContent =
+      const modelContent: Content =
         response.candidates?.[0]?.content || { role: 'model', parts: [] };
       history.push(modelContent);
 
@@ -377,7 +377,7 @@ export async function processMessage(userText, onEvent = () => {}) {
       break;
     }
   } catch (err) {
-    const msg = String(err?.message || err);
+    const msg = String((err as any)?.message || err);
     // Nunca vaza JSON cru para a tela: sempre uma mensagem humana.
     if (isQuotaError(msg) && isDailyQuota(msg)) {
       finalText =
@@ -402,10 +402,10 @@ export async function processMessage(userText, onEvent = () => {}) {
 }
 
 // Retrospecto por regras (sem IA): sempre disponível como base/fallback.
-function ruleReview(a, s) {
-  const pts = [];
+function ruleReview(a: NonNullable<LolState['active']>, s: LolState): string {
+  const pts: string[] = [];
   const min = (s.gameTime || 0) / 60;
-  const o = s.objectives || {};
+  const o = s.objectives || ({} as LolState['objectives']);
   const aram = !!s.isAram;
   const suporte = s.myRole === 'Suporte';
   const kp = s.score?.kp;
@@ -456,10 +456,10 @@ function ruleReview(a, s) {
  * Antes daqui só ia "towers: 8" — o total dos DOIS times — e a análise saía
  * dizendo que você derrubou torres que na verdade perdeu.
  */
-export function lolMatchPayload(state) {
-  const a = state?.active || {};
-  const o = state?.objectives || {};
-  const sc = state?.score || {};
+export function lolMatchPayload(state: LolState) {
+  const a = state?.active || ({} as NonNullable<LolState['active']>);
+  const o = state?.objectives || ({} as LolState['objectives']);
+  const sc = state?.score || ({} as LolState['score']);
   const min = Math.max(1, Math.round((state?.gameTime || 0) / 60));
   return {
     modo: state?.mode || 'desconhecido',
@@ -518,7 +518,7 @@ export function lolMatchPayload(state) {
 }
 
 /** Ficha curta de cada jogador — permite comparar em vez de generalizar. */
-function fichaDosJogadores(lista, minutos) {
+function fichaDosJogadores(lista: RosterPlayer[] | undefined, minutos: number) {
   return (lista || []).map((p) => ({
     campeao: p.champion,
     rota: p.role || null,
@@ -529,7 +529,7 @@ function fichaDosJogadores(lista, minutos) {
 }
 
 /** Você x seu oponente de rota, lado a lado, com a diferença já calculada. */
-function oponenteComparado(state, minutos) {
+function oponenteComparado(state: LolState, minutos: number) {
   const eu = (state?.allies || []).find((p) => p.isMe);
   const alvo = state?.opponent?.champion;
   const ele = (state?.enemies || []).find((p) => p.champion === alvo);
@@ -575,7 +575,7 @@ SOBRE AS MORTES — leia com atenção, é onde mais se erra:
  * Retrospecto pós-jogo: o que foi bem, o que errou e o que melhorar.
  * Usa o último estado válido da partida (a API cai quando o jogo acaba).
  */
-export async function lolPostGame(state) {
+export async function lolPostGame(state: LolState): Promise<string> {
   const a = state?.active;
   if (!a) return 'Não tenho dados suficientes dessa partida para analisar.';
   const base = ruleReview(a, state);
@@ -590,7 +590,7 @@ export async function lolPostGame(state) {
     'melhorias concretas para a próxima partida. Seja direto, específico e encorajador.' +
     REGRAS_HONESTAS;
   try {
-    const res = await generate({
+    const res: any = await generate({
       model: config.model,
       contents: [{ role: 'user', parts: [{ text: JSON.stringify(payload) }] }],
       config: { systemInstruction: sys, temperature: 0.5 },
@@ -605,7 +605,7 @@ export async function lolPostGame(state) {
  * Refaz o retrospecto a partir dos números já guardados no histórico.
  * Serve depois de marcar vitória/derrota à mão ou quando a análise saiu ruim.
  */
-export async function lolReanalyze(payload) {
+export async function lolReanalyze(payload: unknown): Promise<string> {
   if (!hasApiKey()) throw new Error('Configure a chave do Gemini para refazer a análise.');
   const sys =
     'Você é um treinador de League of Legends fazendo o RETROSPECTO de uma partida que ' +
@@ -614,7 +614,7 @@ export async function lolReanalyze(payload) {
     'número que prova isso; (2) o principal ERRO, também com o número; (3) uma ou duas ' +
     'melhorias concretas para a próxima partida. Traga um ângulo diferente do óbvio.' +
     REGRAS_HONESTAS;
-  const res = await generate({
+  const res: any = await generate({
     model: config.model,
     contents: [{ role: 'user', parts: [{ text: JSON.stringify(payload) }] }],
     config: { systemInstruction: sys, temperature: 0.7 },
@@ -628,7 +628,7 @@ export async function lolReanalyze(payload) {
  * Recomendação de build/counter contra o time inimigo, via Gemini.
  * Recebe seu campeão + rota e a composição inimiga (com o oponente de rota).
  */
-export async function lolBuildAdvice(state) {
+export async function lolBuildAdvice(state: LolState): Promise<string> {
   if (!hasApiKey()) return 'Configure a chave do Gemini para receber builds.';
   const you = state?.active?.champion || 'seu campeão';
   const role = state?.myRole || state?.opponent?.role || '';
@@ -654,14 +654,14 @@ export async function lolBuildAdvice(state) {
     'Seja prático e específico ao inimigo. Não repita itens que já estão em ' +
     '"seusItensAgora". Se faltar dado, use o que houver, sem inventar.';
   try {
-    const res = await generate({
+    const res: any = await generate({
       model: config.model,
       contents: [{ role: 'user', parts: [{ text: JSON.stringify(payload) }] }],
       config: { systemInstruction: sys, temperature: 0.5 },
     });
     return (res.text || '').trim() || 'Sem recomendação clara agora.';
   } catch (err) {
-    const msg = String(err?.message || err);
+    const msg = String((err as any)?.message || err);
     if (isOverloadError(msg) || isQuotaError(msg)) {
       return 'O Gemini está ocupado agora. Tente a build de novo em instantes.';
     }
@@ -673,13 +673,13 @@ export async function lolBuildAdvice(state) {
  * Dica avançada de League of Legends via Gemini, a partir do estado ao vivo.
  * Usada pelo botão "Dica do Shadow" no painel de jogo.
  */
-export async function lolCoach(state) {
+export async function lolCoach(state: LolState): Promise<string> {
   if (!hasApiKey()) return 'Configure a chave do Gemini para receber dicas avançadas.';
-  const a = state?.active || {};
-  const o = state?.objectives || {};
+  const a = state?.active || ({} as NonNullable<LolState['active']>);
+  const o = state?.objectives || ({} as LolState['objectives']);
   // Só o que importa agora: mandar o estado inteiro (roster, dicas, itens de
   // todo mundo) só faz o modelo se perder e inventar.
-  const agora = {
+  const agora: Record<string, unknown> = {
     ...lolMatchPayload(state),
     momento: {
       relogio: state?.clock,
@@ -700,14 +700,14 @@ export async function lolCoach(state) {
     'farm, ouro e objetivos. Se estiver tudo bem, reforce o próximo objetivo.' +
     REGRAS_HONESTAS;
   try {
-    const res = await generate({
+    const res: any = await generate({
       model: config.model,
       contents: [{ role: 'user', parts: [{ text: JSON.stringify(agora) }] }],
       config: { systemInstruction: sys, temperature: 0.5 },
     });
     return (res.text || '').trim() || 'Sem uma dica clara agora. Continue no seu plano.';
   } catch (err) {
-    const msg = String(err?.message || err);
+    const msg = String((err as any)?.message || err);
     if (isOverloadError(msg) || isQuotaError(msg)) {
       return 'O Gemini está ocupado agora. Tente a dica de novo em instantes.';
     }

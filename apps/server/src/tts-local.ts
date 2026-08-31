@@ -9,7 +9,7 @@
 // O Piper lê uma frase por linha no stdin e imprime no stdout o caminho do WAV
 // que gerou, na mesma ordem — é isso que casa pedido e resposta aqui.
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, unlink, mkdir, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -28,11 +28,17 @@ const TIMEOUT_MS = 20_000;
 
 export const isLocalAvailable = () => existsSync(EXE) && existsSync(MODEL);
 
-let proc = null;
-let starting = null;
-const queue = []; // pedidos aguardando, na ordem em que foram enviados
+interface Pedido {
+  resolve: (v: Buffer) => void;
+  reject: (e: unknown) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
 
-async function ensureProcess() {
+let proc: ChildProcessWithoutNullStreams | null = null;
+let starting: Promise<ChildProcessWithoutNullStreams> | null = null;
+const queue: Pedido[] = []; // pedidos aguardando, na ordem em que foram enviados
+
+async function ensureProcess(): Promise<ChildProcessWithoutNullStreams> {
   if (proc) return proc;
   if (starting) return starting;
 
@@ -50,7 +56,7 @@ async function ensureProcess() {
     );
 
     let buf = '';
-    p.stdout.on('data', (chunk) => {
+    p.stdout.on('data', (chunk: Buffer) => {
       buf += chunk.toString('utf8');
       let nl;
       while ((nl = buf.indexOf('\n')) >= 0) {
@@ -63,9 +69,9 @@ async function ensureProcess() {
     // O Piper loga no stderr; só interessa se ele morrer.
     p.stderr.on('data', () => {});
 
-    const die = (motivo) => {
+    const die = (motivo: string) => {
       if (proc === p) proc = null;
-      while (queue.length) queue.shift().reject(new Error(motivo));
+      while (queue.length) queue.shift()!.reject(new Error(motivo));
     };
     p.on('exit', (code) => die(`Piper encerrou (código ${code}).`));
     p.on('error', (err) => die(`Piper falhou: ${err.message}`));
@@ -78,7 +84,7 @@ async function ensureProcess() {
   return starting;
 }
 
-async function deliver(wavPath) {
+async function deliver(wavPath: string): Promise<void> {
   const pedido = queue.shift();
   if (!pedido) return;
   try {
@@ -91,11 +97,8 @@ async function deliver(wavPath) {
   }
 }
 
-/**
- * Gera a fala localmente.
- * @returns {Promise<Buffer>} WAV pronto para tocar
- */
-export async function synthesizeLocal(text) {
+/** Gera a fala localmente. */
+export async function synthesizeLocal(text: string): Promise<Buffer> {
   if (!isLocalAvailable()) throw new Error('Voz local não instalada.');
 
   // Uma frase por linha: quebras de linha viram espaço para não virar dois pedidos.
@@ -105,7 +108,7 @@ export async function synthesizeLocal(text) {
   const p = await ensureProcess();
 
   return new Promise((resolve, reject) => {
-    const pedido = {
+    const pedido: Pedido = {
       resolve: (v) => { clearTimeout(pedido.timer); resolve(v); },
       reject: (e) => { clearTimeout(pedido.timer); reject(e); },
     };
@@ -127,12 +130,12 @@ export async function synthesizeLocal(text) {
 }
 
 /** Deixa o modelo carregado já no boot, para a primeira fala não pagar o pedágio. */
-export function warmUpLocal() {
+export function warmUpLocal(): void {
   if (!isLocalAvailable()) return;
   ensureProcess().catch(() => {});
 }
 
-export async function shutdownLocal() {
+export async function shutdownLocal(): Promise<void> {
   if (proc) {
     try { proc.stdin.end(); } catch { /* noop */ }
     try { proc.kill(); } catch { /* noop */ }
