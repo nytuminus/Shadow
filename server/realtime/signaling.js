@@ -14,6 +14,7 @@
 import { WebSocketServer } from 'ws';
 import { nanoid } from 'nanoid';
 import { db } from '../db/index.js';
+import { addGatherInboxItem } from '../tools/gather-inbox.js';
 
 /** @typedef {{ id:string, ws:import('ws').WebSocket, user:object, channelId:string|null, state:object }} Peer */
 
@@ -148,6 +149,13 @@ export function attachSignaling(server) {
             return;
           }
           broadcastAll({ type: 'chat', message: saved });
+          // Notificação "melhor esforço": não atrasa nem derruba o chat se falhar.
+          db().getChannel(channelId).then((channel) => {
+            addGatherInboxItem({
+              id: saved.id,
+              text: `#${channel?.name || channelId} · ${peer.user.name}: ${text}`,
+            });
+          }).catch(() => {});
           break;
         }
 
