@@ -16,9 +16,12 @@ import { promisify } from 'node:util';
 const execAsync = promisify(exec);
 
 // ---------- CPU % (amostragem entre chamadas) ----------
-let lastCpu = sampleCpu();
+interface CpuSample {
+  idle: number;
+  total: number;
+}
 
-function sampleCpu() {
+function sampleCpu(): CpuSample {
   const cpus = os.cpus();
   let idle = 0;
   let total = 0;
@@ -29,7 +32,9 @@ function sampleCpu() {
   return { idle, total };
 }
 
-function cpuUsagePercent() {
+let lastCpu = sampleCpu();
+
+function cpuUsagePercent(): number {
   const now = sampleCpu();
   const idleDelta = now.idle - lastCpu.idle;
   const totalDelta = now.total - lastCpu.total;
@@ -40,7 +45,7 @@ function cpuUsagePercent() {
 }
 
 // ---------- Coletores caros (com cache) ----------
-async function runPS(cmd) {
+async function runPS(cmd: string): Promise<string> {
   const { stdout } = await execAsync(
     `powershell -NoProfile -NonInteractive -Command "${cmd}"`,
     { windowsHide: true, timeout: 8000 }
@@ -48,7 +53,15 @@ async function runPS(cmd) {
   return stdout.trim();
 }
 
-async function readGpu() {
+interface GpuInfo {
+  name: string;
+  temp: number;
+  util: number;
+  memUsedMB: number;
+  memTotalMB: number;
+}
+
+async function readGpu(): Promise<GpuInfo | null> {
   try {
     const out = await execAsync(
       'nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits',
@@ -58,7 +71,7 @@ async function readGpu() {
     if (!line) return null;
     const [name, temp, util, memUsed, memTotal] = line.split(',').map((s) => s.trim());
     return {
-      name,
+      name: name!,
       temp: Number(temp),
       util: Number(util),
       memUsedMB: Number(memUsed),
@@ -69,7 +82,7 @@ async function readGpu() {
   }
 }
 
-async function readCpuTemp() {
+async function readCpuTemp(): Promise<number | null> {
   try {
     const raw = await runPS(
       "(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop | Select-Object -First 1).CurrentTemperature"
@@ -85,7 +98,14 @@ async function readCpuTemp() {
   }
 }
 
-async function readDisk() {
+interface DiskInfo {
+  usedGB: number;
+  freeGB: number;
+  totalGB: number;
+  percent: number;
+}
+
+async function readDisk(): Promise<DiskInfo | null> {
   try {
     const raw = await runPS(
       "Get-PSDrive C | Select-Object @{n='used';e={[math]::Round($_.Used/1GB,1)}}, @{n='free';e={[math]::Round($_.Free/1GB,1)}} | ConvertTo-Json -Compress"
@@ -103,7 +123,12 @@ async function readDisk() {
   }
 }
 
-async function readBattery() {
+interface BatteryInfo {
+  percent: number;
+  charging: boolean;
+}
+
+async function readBattery(): Promise<BatteryInfo | null> {
   try {
     const raw = await runPS(
       "$b = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue; if ($b) { ('{0}|{1}' -f $b.EstimatedChargeRemaining, $b.BatteryStatus) } else { 'none' }"
@@ -119,11 +144,18 @@ async function readBattery() {
   }
 }
 
-let slowCache = null;
+interface SlowMetrics {
+  gpu: GpuInfo | null;
+  cpuTemp: number | null;
+  disk: DiskInfo | null;
+  battery: BatteryInfo | null;
+}
+
+let slowCache: SlowMetrics | null = null;
 let slowAt = 0;
 const SLOW_TTL = 4000;
 
-async function getSlowMetrics() {
+async function getSlowMetrics(): Promise<SlowMetrics> {
   const now = Date.now();
   if (slowCache && now - slowAt < SLOW_TTL) return slowCache;
   const [gpu, cpuTemp, disk, battery] = await Promise.all([
@@ -169,7 +201,7 @@ export async function getMetrics() {
 }
 
 /** Resumo curto em texto, para o Shadow falar quando perguntam do PC. */
-export async function getMetricsSummary() {
+export async function getMetricsSummary(): Promise<string> {
   const m = await getMetrics();
   const partes = [`CPU em ${m.cpu.usage}%`, `memória em ${m.ram.percent}%`];
   if (m.cpu.temp != null) partes.push(`CPU a ${m.cpu.temp} graus`);

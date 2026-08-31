@@ -5,8 +5,8 @@
 // usuário consegue conferir e apagar, e não exige permissão de administrador.
 //
 // Quando o Shadow roda como aplicativo (Electron), quem manda no atalho é o
-// próprio Electron (app.setLoginItemSettings) — veja desktop/main.js. Aqui é o
-// caminho para quem usa a versão do navegador, pelo Shadow.bat.
+// próprio Electron (app.setLoginItemSettings) — veja apps/desktop/main.cjs.
+// Aqui é o caminho para quem usa a versão do navegador, pelo Shadow.bat.
 
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -26,7 +26,7 @@ const LINK = STARTUP_DIR ? join(STARTUP_DIR, 'Shadow.lnk') : '';
 const suportado = () => process.platform === 'win32' && !!STARTUP_DIR && existsSync(BAT);
 
 /** Roda um trecho de PowerShell e espera o fim. */
-function powershell(script) {
+function powershell(script: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const p = spawn(
       'powershell',
@@ -42,7 +42,13 @@ function powershell(script) {
   });
 }
 
-export async function startupStatus() {
+export interface StartupStatus {
+  supported: boolean;
+  enabled: boolean;
+  path: string | null;
+}
+
+export async function startupStatus(): Promise<StartupStatus> {
   return {
     supported: suportado(),
     enabled: !!LINK && existsSync(LINK),
@@ -50,11 +56,8 @@ export async function startupStatus() {
   };
 }
 
-/**
- * Liga ou desliga a inicialização automática.
- * @param {boolean} enabled
- */
-export async function setStartup(enabled) {
+/** Liga ou desliga a inicialização automática. */
+export async function setStartup(enabled: boolean): Promise<StartupStatus> {
   if (!suportado()) {
     throw new Error('Inicialização automática só funciona no Windows, com o Shadow.bat na pasta do projeto.');
   }
@@ -67,7 +70,7 @@ export async function setStartup(enabled) {
   // O atalho aponta direto para o Shadow.bat, com a janela minimizada
   // (WindowStyle 7). Apontar para o .bat evita passar comando dentro de
   // comando — cada nível de aspas a mais é um jeito novo de quebrar.
-  const esc = (s) => s.replace(/'/g, "''");
+  const esc = (s: string) => s.replace(/'/g, "''");
   await powershell(
     `$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${esc(LINK)}'); ` +
     `$s.TargetPath = '${esc(BAT)}'; ` +

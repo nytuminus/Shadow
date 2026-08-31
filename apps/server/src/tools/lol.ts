@@ -18,7 +18,64 @@ const API = 'https://127.0.0.1:2999/liveclientdata/allgamedata';
 // só para este host local e conhecido.
 const agent = new https.Agent({ rejectUnauthorized: false });
 
-function fetchGameData() {
+// A Live Client Data API não tem um contrato TS oficial — o shape abaixo cobre
+// só os campos que este arquivo realmente lê; o resto passa por [key: string].
+interface RiotScores {
+  kills?: number;
+  deaths?: number;
+  assists?: number;
+  creepScore?: number;
+}
+
+interface RiotSummonerSpell {
+  rawDisplayName?: string;
+  displayName?: string;
+}
+
+interface RiotPlayer {
+  summonerName?: string;
+  riotIdGameName?: string;
+  riotId?: string;
+  championName?: string;
+  team?: string;
+  level?: number;
+  position?: string;
+  isDead?: boolean;
+  respawnTimer?: number;
+  scores?: RiotScores;
+  summonerSpells?: { summonerSpellOne?: RiotSummonerSpell; summonerSpellTwo?: RiotSummonerSpell };
+  items?: { displayName: string }[];
+  [key: string]: unknown;
+}
+
+interface RiotActivePlayer {
+  summonerName?: string;
+  riotIdGameName?: string;
+  riotId?: string;
+  championStats?: { maxHealth?: number; currentHealth?: number };
+  currentGold?: number;
+  [key: string]: unknown;
+}
+
+export interface RiotEvent {
+  EventName: string;
+  EventTime?: number;
+  KillerName?: string;
+  VictimName?: string;
+  Assisters?: string[];
+  DragonType?: string;
+  Result?: string;
+  [key: string]: unknown;
+}
+
+interface RiotGameData {
+  activePlayer?: RiotActivePlayer;
+  allPlayers?: RiotPlayer[];
+  events?: { Events?: RiotEvent[] };
+  gameData?: { gameTime?: number; gameMode?: string };
+}
+
+function fetchGameData(): Promise<RiotGameData> {
   return new Promise((resolve, reject) => {
     const req = https.get(API, { agent, timeout: 2500 }, (res) => {
       if (res.statusCode !== 200) {
@@ -37,15 +94,74 @@ function fetchGameData() {
   });
 }
 
+export interface ActivePlayerState {
+  champion?: string;
+  level?: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  csPerMin: number;
+  gold: number;
+  hpPct: number | null;
+  isDead: boolean;
+  respawnIn: number;
+  team?: string;
+  items: string[];
+}
+
+export interface LolState {
+  mode: string;
+  isAram: boolean;
+  myRole: string | null;
+  gameTime: number;
+  clock: string;
+  active: ActivePlayerState | null;
+  teams: {
+    order: { kills: number; deaths: number; assists: number; label?: string };
+    chaos: { kills: number; deaths: number; assists: number; label?: string };
+  };
+  score: { allyKills: number; enemyKills: number; diff: number; kp: number | null };
+  mortes: MortesResumo;
+  objectives: {
+    dragons: number;
+    barons: number;
+    towers: number;
+    dragonsAlly: number | null;
+    dragonsEnemy: number | null;
+    dragonTypesAlly: string[];
+    dragonTypesEnemy: string[];
+    baronsAlly: number | null;
+    baronsEnemy: number | null;
+    heraldsAlly: number | null;
+    heraldsEnemy: number | null;
+    towersAlly: number | null;
+    towersEnemy: number | null;
+    inhibsAlly: number | null;
+    inhibsEnemy: number | null;
+    dragonIn: number | null;
+    baronIn: number | null;
+  };
+  roster: RosterPlayer[];
+  allies: RosterPlayer[];
+  enemies: RosterPlayer[];
+  enemyJungler: { champion?: string; isDead: boolean; respawnIn: number } | null;
+  opponent: { champion?: string; role: string } | null;
+  result: string | null;
+}
+
+export type LolLiveState = LolState & { inGame: true; tips: Tip[] };
+export type LolLiveResult = LolLiveState | { inGame: false };
+
 // Último estado válido em partida — usado para o retrospecto, já que a API
 // para de responder assim que o jogo termina.
-let lastInGame = null;
+let lastInGame: LolLiveResult | null = null;
 export const getLastInGame = () => lastInGame;
 export const clearLastInGame = () => { lastInGame = null; };
 
 // Eventos crus da última leitura. É a prova do que a Riot realmente manda —
 // serve para conferir a atribuição de torres sem depender de adivinhação.
-let ultimosEventos = [];
+let ultimosEventos: RiotEvent[] = [];
 export function getLolDebug() {
   return {
     total: ultimosEventos.length,
@@ -58,31 +174,31 @@ export function getLolDebug() {
   };
 }
 
-const fmtTime = (sec) => {
+const fmtTime = (sec: number): string => {
   const s = Math.max(0, Math.floor(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
 // Casa o jogador ativo com a entrada dele em allPlayers (nome varia entre versões).
-function findActive(active, players) {
+function findActive(active: RiotActivePlayer | undefined, players: RiotPlayer[]): RiotPlayer | undefined {
   const names = [active?.summonerName, active?.riotIdGameName, active?.riotId]
-    .filter(Boolean)
-    .map((n) => String(n).toLowerCase());
+    .filter((n): n is string => !!n)
+    .map((n) => n.toLowerCase());
   return players.find((p) => {
     const cand = [p.summonerName, p.riotIdGameName, p.riotId]
-      .filter(Boolean)
-      .map((n) => String(n).toLowerCase());
+      .filter((n): n is string => !!n)
+      .map((n) => n.toLowerCase());
     return cand.some((c) => names.includes(c));
   });
 }
 
-const TEAM_PT = { ORDER: 'Azul', CHAOS: 'Vermelho' };
+const TEAM_PT: Record<string, string> = { ORDER: 'Azul', CHAOS: 'Vermelho' };
 
 /** ARAM (e variantes) não tem rota, selva, dragão nem recall pra comprar. */
-export const isAram = (mode) => /aram|howling/i.test(String(mode || ''));
+export const isAram = (mode: string): boolean => /aram|howling/i.test(String(mode || ''));
 
 // Tipos de dragão em português (o evento traz "Fire", "Earth", "Elder"…).
-const DRAGAO_PT = {
+const DRAGAO_PT: Record<string, string> = {
   fire: 'Infernal',
   earth: 'Montanha',
   water: 'Oceano',
@@ -92,31 +208,31 @@ const DRAGAO_PT = {
   elder: 'Ancião',
 };
 
-const ROLE_PT = {
+const ROLE_PT: Record<string, string> = {
   TOP: 'Topo', JUNGLE: 'Selva', MIDDLE: 'Meio', BOTTOM: 'Atirador', UTILITY: 'Suporte',
 };
 
 // Detecta o jungler pelo feitiço Punir (Smite). O rawDisplayName não é
 // traduzido, então "SummonerSmite" aparece em qualquer idioma.
-function hasSmite(player) {
+function hasSmite(player: RiotPlayer): boolean {
   const sp = player.summonerSpells || {};
   const raws = [sp.summonerSpellOne, sp.summonerSpellTwo]
-    .filter(Boolean)
+    .filter((s): s is RiotSummonerSpell => !!s)
     .map((s) => `${s.rawDisplayName || ''} ${s.displayName || ''}`.toLowerCase());
   return raws.some((r) => /smite|punir/.test(r));
 }
 
 // Rota do jogador: usa a posição informada; se vier vazia, ao menos marca o jungler.
-function roleOf(player) {
+function roleOf(player: RiotPlayer): string {
   const pos = String(player.position || '').toUpperCase();
   if (ROLE_PT[pos]) return ROLE_PT[pos];
   if (hasSmite(player)) return 'Selva';
   return '';
 }
 
-function spellNames(player) {
+function spellNames(player: RiotPlayer): string[] {
   const sp = player.summonerSpells || {};
-  return [sp.summonerSpellOne?.displayName, sp.summonerSpellTwo?.displayName].filter(Boolean);
+  return [sp.summonerSpellOne?.displayName, sp.summonerSpellTwo?.displayName].filter((s): s is string => !!s);
 }
 
 /**
@@ -124,18 +240,52 @@ function spellNames(player) {
  * de formato entre versões (summonerName, riotIdGameName, "Nome#TAG"), então
  * indexamos todas as variantes.
  */
-function playerTeamLookup(players) {
-  const mapa = new Map();
+function playerTeamLookup(players: RiotPlayer[]): (name?: string) => string | null {
+  const mapa = new Map<string, string | undefined>();
   for (const p of players) {
     for (const n of [p.summonerName, p.riotIdGameName, p.riotId]) {
-      if (n) mapa.set(String(n).toLowerCase(), p.team);
+      if (n) mapa.set(n.toLowerCase(), p.team);
     }
   }
-  return (name) => {
+  return (name?: string) => {
     if (!name) return null;
-    const k = String(name).toLowerCase();
-    return mapa.get(k) || mapa.get(k.split('#')[0]) || null;
+    const k = name.toLowerCase();
+    return mapa.get(k) || mapa.get(k.split('#')[0]!) || null;
   };
+}
+
+export interface RosterPlayer {
+  name: string;
+  champion?: string;
+  team?: string;
+  role: string;
+  isJungler: boolean;
+  spells: string[];
+  level?: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  isDead: boolean;
+  respawnIn: number;
+  isMe: boolean;
+}
+
+export interface MortesResumo {
+  total: number;
+  duelo: number;
+  emNumero: number;
+  emLuta: number;
+  comOJunglerInimigo: number;
+  naFaseDeRota: number;
+  quemMaisTeMatou: { campeao: string; vezes: number } | null;
+  detalhe: {
+    minuto: number;
+    tipo: string;
+    inimigosEnvolvidos: number;
+    matador: string;
+    comOJungler: boolean;
+  }[];
 }
 
 /**
@@ -150,23 +300,23 @@ function playerTeamLookup(players) {
  *
  * Sem isso o treinador só sabia dizer "você morreu 11 vezes, jogue seguro" —
  * um julgamento que os dados não sustentam.
- *
- * @param {object[]} events   eventos da partida
- * @param {object[]} roster   jogadores com nome, time e função
- * @param {string} meuNome    nome do jogador ativo
- * @param {string} allyTeam   'ORDER' | 'CHAOS'
  */
-export function analisarMortes(events, roster, meuNome, allyTeam) {
+export function analisarMortes(
+  events: RiotEvent[],
+  roster: RosterPlayer[],
+  meuNome: string | undefined,
+  allyTeam: string
+): MortesResumo {
   const kills = (events || []).filter((e) => e.EventName === 'ChampionKill');
-  const norm = (n) => String(n || '').toLowerCase().split('#')[0];
+  const norm = (n?: string) => String(n || '').toLowerCase().split('#')[0]!;
   const eu = norm(meuNome);
   const minhas = kills.filter((e) => norm(e.VictimName) === eu);
 
-  const porNome = new Map();
+  const porNome = new Map<string, RosterPlayer>();
   for (const p of roster || []) porNome.set(norm(p.name), p);
   const junglerInimigo = (roster || []).find((p) => p.team !== allyTeam && p.isJungler);
 
-  const resumo = {
+  const resumo: MortesResumo = {
     total: minhas.length,
     duelo: 0,
     emNumero: 0,
@@ -178,7 +328,7 @@ export function analisarMortes(events, roster, meuNome, allyTeam) {
   };
   if (!minhas.length) return resumo;
 
-  const contagemAlgoz = new Map();
+  const contagemAlgoz = new Map<string, number>();
 
   for (const morte of minhas) {
     const t = morte.EventTime || 0;
@@ -189,10 +339,10 @@ export function analisarMortes(events, roster, meuNome, allyTeam) {
       (e) => e !== morte && Math.abs((e.EventTime || 0) - t) <= 10
     ).length;
 
-    const envolvidos = [morte.KillerName, ...(morte.Assisters || [])].map(norm);
+    const envolvidos = [morte.KillerName, ...(morte.Assisters || [])].map((n) => norm(n));
     const temJungler = !!junglerInimigo && envolvidos.includes(norm(junglerInimigo.name));
 
-    let tipo;
+    let tipo: 'emLuta' | 'emNumero' | 'duelo';
     if (emVolta >= 1) tipo = 'emLuta';
     else if (participantes >= 2) tipo = 'emNumero';
     else tipo = 'duelo';
@@ -219,6 +369,14 @@ export function analisarMortes(events, roster, meuNome, allyTeam) {
   return resumo;
 }
 
+export interface Split {
+  ally: number | null;
+  enemy: number | null;
+  desconhecido: number;
+  total: number;
+  confiavel?: boolean;
+}
+
 /**
  * Divide abates de objetivo (dragão, barão, arauto) entre os dois times,
  * pelo nome de quem matou.
@@ -226,7 +384,7 @@ export function analisarMortes(events, roster, meuNome, allyTeam) {
  * Quando o matador não bate com ninguém do placar, ele não entra em nenhum
  * lado — melhor um número faltando do que um número no time errado.
  */
-export function creditByKiller(list, allyTeam, teamOf) {
+export function creditByKiller(list: RiotEvent[], allyTeam: string, teamOf: (name?: string) => string | null): Split {
   let ally = 0, enemy = 0, desconhecido = 0;
   for (const e of list) {
     const t = teamOf(e.KillerName);
@@ -247,20 +405,19 @@ export const MAX_INIBIDORES = 3;
  * Procura o nome em qualquer campo do evento em vez de confiar numa chave fixa:
  * foi exatamente isso que quebrou antes — o campo não veio com o nome esperado,
  * toda torre caiu no mesmo balde e o histórico mostrou "0 × 16".
- *
- * @returns {'ORDER'|'CHAOS'|null} null quando o evento não diz.
  */
-export function structureOwner(evento) {
+export function structureOwner(evento: RiotEvent): 'ORDER' | 'CHAOS' | null {
   // Cuidado: o campo "EventName" vale "TurretKilled" — contém a palavra
   // "Turret" mas NÃO é o nome da estrutura. Por isso ele fica de fora e o
   // valor precisa ter a cara de um nome de verdade ("Turret_T1_C_05_A").
-  const nome =
+  const nome = String(
     Object.entries(evento || {}).find(
       ([chave, valor]) =>
         chave !== 'EventName' &&
         typeof valor === 'string' &&
         /^(turret|barracks|inhib)\w*_/i.test(valor)
-    )?.[1] || '';
+    )?.[1] || ''
+  );
   if (/_T1\b|_T1_|order/i.test(nome)) return 'ORDER';
   if (/_T2\b|_T2_|chaos/i.test(nome)) return 'CHAOS';
   return null;
@@ -273,7 +430,11 @@ export function structureOwner(evento) {
  * derrubou); se o evento não disser, cai para o time de quem matou. O que não
  * der para saber fica em "desconhecido" — nunca é chutado para um dos lados.
  */
-export function creditByStructure(list, allyTeam, teamOf = () => null) {
+export function creditByStructure(
+  list: RiotEvent[],
+  allyTeam: string,
+  teamOf: (name?: string) => string | null = () => null
+): Split {
   let ally = 0, enemy = 0, desconhecido = 0;
   for (const e of list) {
     const dono = structureOwner(e);
@@ -299,9 +460,9 @@ export function creditByStructure(list, allyTeam, teamOf = () => null) {
  * Última barreira: se a conta deu um número que o jogo não permite, ela está
  * errada em algum lugar — devolvemos null, e a tela e a IA tratam como "n/d".
  */
-export function sanityCheck(split, maxPorTime) {
+export function sanityCheck(split: Split, maxPorTime: number): Split {
   const impossivel =
-    split.ally > maxPorTime || split.enemy > maxPorTime || split.desconhecido > 0;
+    (split.ally || 0) > maxPorTime || (split.enemy || 0) > maxPorTime || split.desconhecido > 0;
   if (!impossivel) return split;
   console.warn(
     `[lol] contagem impossível (${split.ally} × ${split.enemy}, ${split.desconhecido} sem dono, ` +
@@ -310,18 +471,7 @@ export function sanityCheck(split, maxPorTime) {
   return { ...split, ally: null, enemy: null, confiavel: false };
 }
 
-/**
- * Lê o estado atual da partida e monta um resumo + dicas.
- * @returns {Promise<object>} { inGame:false } fora de partida.
- */
-export async function getLolLive() {
-  let data;
-  try {
-    data = await fetchGameData();
-  } catch {
-    return { inGame: false };
-  }
-
+async function buildState(data: RiotGameData): Promise<LolState> {
   const gameTime = data.gameData?.gameTime || 0;
   const mode = data.gameData?.gameMode || '—';
   const players = Array.isArray(data.allPlayers) ? data.allPlayers : [];
@@ -345,8 +495,8 @@ export async function getLolLive() {
     : null;
 
   // Respawn: dragão 5:00 após a morte; barão 6:00.
-  const dragonIn = lastDragon ? lastDragon.EventTime + 300 - gameTime : null;
-  const baronIn = lastBaron ? lastBaron.EventTime + 360 - gameTime : null;
+  const dragonIn = lastDragon ? (lastDragon.EventTime || 0) + 300 - gameTime : null;
+  const baronIn = lastBaron ? (lastBaron.EventTime || 0) + 360 - gameTime : null;
 
   // ---- Jogador ativo ----
   const myTeam = me?.team;
@@ -355,7 +505,7 @@ export async function getLolLive() {
   const minutes = gameTime / 60;
   const csPerMin = minutes > 1 ? cs / minutes : 0;
   const gold = Math.round(data.activePlayer?.currentGold ?? 0);
-  const hpPct = stats.maxHealth ? Math.round((stats.currentHealth / stats.maxHealth) * 100) : null;
+  const hpPct = stats.maxHealth ? Math.round(((stats.currentHealth || 0) / stats.maxHealth) * 100) : null;
 
   const active = me
     ? {
@@ -376,14 +526,14 @@ export async function getLolLive() {
     : null;
 
   // ---- Placar por time ----
-  const teamScore = (team) => {
+  const teamScore = (team: string) => {
     const t = players.filter((p) => p.team === team);
-    const sum = (f) => t.reduce((a, p) => a + (p.scores?.[f] || 0), 0);
+    const sum = (f: keyof RiotScores) => t.reduce((a, p) => a + (p.scores?.[f] || 0), 0);
     return { kills: sum('kills'), deaths: sum('deaths'), assists: sum('assists') };
   };
 
   const meName = me?.riotIdGameName || me?.summonerName;
-  const roster = players.map((p) => {
+  const roster: RosterPlayer[] = players.map((p) => {
     const name = p.riotIdGameName || p.summonerName || '—';
     return {
       name,
@@ -420,7 +570,7 @@ export async function getLolLive() {
   // Sem isto o retrospecto vira ficção: "towers" cru conta as torres dos DOIS
   // times, e a IA acaba dizendo que você derrubou o que na verdade perdeu.
   const teamOfPlayer = playerTeamLookup(players);
-  const porMatador = (list) => creditByKiller(list, allyTeam, teamOfPlayer);
+  const porMatador = (list: RiotEvent[]) => creditByKiller(list, allyTeam, teamOfPlayer);
 
   // Todo objetivo passa pela mesma régua: ou o número fecha, ou é "n/d".
   const dragonSplit = sanityCheck(porMatador(dragons), 12);
@@ -431,11 +581,11 @@ export async function getLolLive() {
 
   // Quais dragões cada lado pegou. "3 dragões" não diz nada; "Infernal,
   // Montanha e Elder do inimigo" muda completamente a leitura da partida.
-  const tiposDeDragao = (meus) =>
+  const tiposDeDragao = (meus: boolean) =>
     dragons
       .filter((e) => (teamOfPlayer(e.KillerName) === allyTeam) === meus)
       .map((e) => DRAGAO_PT[String(e.DragonType || '').toLowerCase()] || e.DragonType)
-      .filter(Boolean);
+      .filter((d): d is string => !!d);
 
   // Participação em abates: quanto do time passou pelas suas mãos.
   const allyKills = allies.reduce((soma, p) => soma + (p.kills || 0), 0);
@@ -446,7 +596,6 @@ export async function getLolLive() {
       : null;
 
   const state = {
-    inGame: true,
     mode,
     isAram: isAram(mode),
     myRole: myRole || null,
@@ -496,15 +645,37 @@ export async function getLolLive() {
     result,
   };
 
-  state.tips = buildTips(state);
+  return state;
+}
+
+/**
+ * Lê o estado atual da partida e monta um resumo + dicas.
+ * `{ inGame:false }` fora de partida.
+ */
+export async function getLolLive(): Promise<LolLiveResult> {
+  let data: RiotGameData;
+  try {
+    data = await fetchGameData();
+  } catch {
+    return { inGame: false };
+  }
+
+  const built = await buildState(data);
+  const state: LolLiveState = { inGame: true, ...built, tips: buildTips(built) };
   lastInGame = state; // guardamos para o retrospecto pós-jogo
   return state;
 }
 
+interface Tip {
+  id: string;
+  level: 'info' | 'warn' | 'urgent';
+  text: string;
+}
+
 // ---- Treinador baseado em regras (instantâneo, sem gastar cota) ----
 // Cada dica tem um `id` estável: o front fala só quando a dica é nova.
-function buildTips(s) {
-  const tips = [];
+function buildTips(s: LolState): Tip[] {
+  const tips: Tip[] = [];
   const a = s.active;
   const min = s.gameTime / 60;
   // No ARAM não existe recall pra comprar, selva, dragão nem farm de rota —
@@ -565,7 +736,7 @@ function buildTips(s) {
   }
 
   // Nível 6 (ultimate)
-  if (a.level >= 6 && a.level < 7) {
+  if (a.level != null && a.level >= 6 && a.level < 7) {
     tips.push({ id: 'ult6', level: 'info', text: 'Você tem seu ultimate no nível 6. Procure uma boa jogada.' });
   }
 
@@ -594,17 +765,17 @@ function buildTips(s) {
   }
 
   // Leitura do placar de objetivos — agora que sabemos de quem é cada um.
-  if (o.dragonsEnemy >= 2 && o.dragonsEnemy > o.dragonsAlly) {
+  if ((o.dragonsEnemy || 0) >= 2 && (o.dragonsEnemy || 0) > (o.dragonsAlly || 0)) {
     tips.push({
       id: 'dragao-atras-' + o.dragonsEnemy,
-      level: o.dragonsEnemy >= 3 ? 'urgent' : 'warn',
+      level: (o.dragonsEnemy || 0) >= 3 ? 'urgent' : 'warn',
       text:
-        o.dragonsEnemy >= 3
+        (o.dragonsEnemy || 0) >= 3
           ? `O inimigo está com ${o.dragonsEnemy} dragões e fecha a alma no próximo. Esse você precisa contestar.`
           : `O inimigo tem ${o.dragonsEnemy} dragões contra ${o.dragonsAlly} seus. Prepare visão para o próximo.`,
     });
   }
-  if (o.towersEnemy - o.towersAlly >= 3) {
+  if ((o.towersEnemy || 0) - (o.towersAlly || 0) >= 3) {
     tips.push({
       id: 'torres-atras-' + o.towersEnemy,
       level: 'warn',
@@ -616,12 +787,12 @@ function buildTips(s) {
 }
 
 /** Resumo curto para o Shadow falar quando perguntam da partida. */
-export async function getLolSummary() {
+export async function getLolSummary(): Promise<string> {
   const s = await getLolLive();
   if (!s.inGame) return 'Você não está em uma partida de League of Legends agora.';
   const a = s.active;
   if (!a) return `Partida em andamento, ${s.clock} de jogo.`;
   let txt = `Aos ${s.clock}, você está de ${a.champion}, nível ${a.level}, com ${a.kills}/${a.deaths}/${a.assists} e ${a.cs} de CS.`;
-  if (s.tips.length) txt += ' ' + s.tips[0].text;
+  if (s.tips.length) txt += ' ' + s.tips[0]!.text;
   return txt;
 }

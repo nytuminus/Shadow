@@ -1,4 +1,4 @@
-import { Type } from '@google/genai';
+import { Type, type FunctionDeclaration } from '@google/genai';
 
 /**
  * Declarações de funções (ferramentas) para o Gemini.
@@ -6,7 +6,7 @@ import { Type } from '@google/genai';
  * A busca na web (web_search) é tratada de forma especial: faz uma
  * chamada separada ao Gemini com o "Google Search" ativado.
  */
-export const functionDeclarations = [
+export const functionDeclarations: FunctionDeclaration[] = [
   {
     name: 'open_application',
     description:

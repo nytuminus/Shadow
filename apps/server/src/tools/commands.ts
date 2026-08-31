@@ -5,7 +5,7 @@
 // o Spotify e a pasta downloads"). Ao rodar, a acao passa pelo mesmo cerebro
 // dos comandos falados, entao pode fazer tudo que o Shadow ja faz.
 //
-// Persistido em server/data/commands.json, no mesmo padrao dos lembretes.
+// Persistido em apps/server/data/commands.json, no mesmo padrao dos lembretes.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -13,9 +13,18 @@ import { dataFile, ensureDataDir } from '../data-dir.js';
 
 const FILE = dataFile('commands.json');
 
-let commands = [];
+export interface SavedCommand {
+  id: string;
+  trigger: string;
+  action: string;
+  runs: number;
+  createdAt: string;
+  lastRun?: string;
+}
 
-const norm = (s) =>
+let commands: SavedCommand[] = [];
+
+const norm = (s: string): string =>
   String(s || '')
     .toLowerCase()
     .normalize('NFD')
@@ -24,12 +33,12 @@ const norm = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-async function persist() {
+async function persist(): Promise<void> {
   await ensureDataDir();
   await writeFile(FILE, JSON.stringify(commands, null, 2), 'utf8');
 }
 
-export async function loadCommands() {
+export async function loadCommands(): Promise<SavedCommand[]> {
   try {
     await ensureDataDir();
     if (existsSync(FILE)) commands = JSON.parse(await readFile(FILE, 'utf8'));
@@ -39,15 +48,15 @@ export async function loadCommands() {
   return commands;
 }
 
-export function listCommands() {
+export function listCommands(): SavedCommand[] {
   return commands;
 }
 
-export async function addCommand(trigger, action) {
+export async function addCommand(trigger: string, action: string): Promise<SavedCommand> {
   const t = String(trigger || '').trim();
   const a = String(action || '').trim();
   if (!t || !a) throw new Error('Preencha o gatilho e a ação do comando.');
-  const cmd = {
+  const cmd: SavedCommand = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     trigger: t,
     action: a,
@@ -59,7 +68,10 @@ export async function addCommand(trigger, action) {
   return cmd;
 }
 
-export async function updateCommand(id, fields) {
+export async function updateCommand(
+  id: string,
+  fields: { trigger?: string; action?: string }
+): Promise<SavedCommand | null> {
   const cmd = commands.find((c) => c.id === id);
   if (!cmd) return null;
   if (fields.trigger != null) cmd.trigger = String(fields.trigger).trim();
@@ -68,7 +80,7 @@ export async function updateCommand(id, fields) {
   return cmd;
 }
 
-export async function deleteCommand(id) {
+export async function deleteCommand(id: string): Promise<boolean> {
   const before = commands.length;
   commands = commands.filter((c) => c.id !== id);
   await persist();
@@ -76,7 +88,7 @@ export async function deleteCommand(id) {
 }
 
 /** Marca um uso (contador), para o painel mostrar os mais usados. */
-export async function markRun(id) {
+export async function markRun(id: string): Promise<SavedCommand | undefined> {
   const cmd = commands.find((c) => c.id === id);
   if (cmd) {
     cmd.runs = (cmd.runs || 0) + 1;
@@ -90,7 +102,7 @@ export async function markRun(id) {
  * Encontra um comando pelo gatilho falado/digitado.
  * Casa por igualdade normalizada ou quando o texto contem o gatilho inteiro.
  */
-export function findCommand(spoken) {
+export function findCommand(spoken: string): SavedCommand | null {
   const s = norm(spoken);
   if (!s) return null;
   // 1) igualdade exata do gatilho

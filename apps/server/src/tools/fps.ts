@@ -11,7 +11,7 @@
 // ferramentas/PresentMon.exe na pasta do Shadow. Precisa de administrador,
 // porque ler quadros de outro processo passa pelo ETW do Windows.
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,22 +35,25 @@ export const PASTA_FERRAMENTAS = PASTAS[0];
 
 const PROCESSO_DO_JOGO = 'League of Legends.exe';
 
-let proc = null;
-let ultimoFps = null;
+let proc: ChildProcessWithoutNullStreams | null = null;
+let ultimoFps: number | null = null;
 let ultimaLeitura = 0;
 let indisponivel = false; // já tentamos e não deu: não insiste a cada segundo
 
-export function presentMonPath() {
+export function presentMonPath(): string | null {
   return CANDIDATOS.find((p) => existsSync(p)) || null;
 }
 
-export const fpsDisponivel = () => !!presentMonPath();
+export const fpsDisponivel = (): boolean => !!presentMonPath();
 
-/**
- * FPS atual do jogo.
- * @returns {{fps: number|null, fonte: string, dica?: string}}
- */
-export function getFps() {
+export interface FpsInfo {
+  fps: number | null;
+  fonte: string;
+  dica?: string;
+}
+
+/** FPS atual do jogo. */
+export function getFps(): FpsInfo {
   const caminho = presentMonPath();
   if (!caminho) {
     return {
@@ -70,7 +73,7 @@ export function getFps() {
 }
 
 /** Liga a medição enquanto o Modo Jogo estiver aberto. */
-export function iniciarFps() {
+export function iniciarFps(): void {
   if (proc || indisponivel) return;
   const caminho = presentMonPath();
   if (!caminho) return;
@@ -93,9 +96,9 @@ export function iniciarFps() {
     return;
   }
 
-  let colunas = null;
+  let colunas: string[] | null = null;
   let resto = '';
-  proc.stdout.on('data', (chunk) => {
+  proc.stdout.on('data', (chunk: Buffer) => {
     resto += chunk.toString('utf8');
     let nl;
     while ((nl = resto.indexOf('\n')) >= 0) {
@@ -119,7 +122,7 @@ export function iniciarFps() {
     }
   });
 
-  proc.stderr.on('data', (d) => {
+  proc.stderr.on('data', (d: Buffer) => {
     const txt = d.toString();
     if (/access|denied|administrator|privile/i.test(txt)) indisponivel = true;
   });
@@ -128,7 +131,7 @@ export function iniciarFps() {
 }
 
 /** Desliga a medição quando o Modo Jogo fecha (não fica processo à toa). */
-export function pararFps() {
+export function pararFps(): void {
   if (!proc) return;
   try { proc.kill(); } catch { /* já morreu */ }
   proc = null;

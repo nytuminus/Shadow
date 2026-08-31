@@ -9,7 +9,7 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
-function stripHtml(s) {
+function stripHtml(s: string): string {
   return s
     .replace(/<[^>]+>/g, '')
     .replace(/&amp;/g, '&')
@@ -22,10 +22,10 @@ function stripHtml(s) {
     .trim();
 }
 
-export async function searchWeb(query) {
+export async function searchWeb(query: string): Promise<string> {
   const q = String(query || '').trim();
   if (!q) return 'Busca vazia.';
-  const results = [];
+  const results: string[] = [];
 
   // 1) Resposta instantânea (definições, fatos rápidos).
   try {
@@ -34,7 +34,7 @@ export async function searchWeb(query) {
       encodeURIComponent(q) +
       '&format=json&no_html=1&skip_disambig=1&kl=br-pt';
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) });
-    const data = await res.json();
+    const data: any = await res.json();
     if (data.AbstractText) results.push(data.AbstractText);
     else if (data.Answer) results.push(String(data.Answer));
   } catch {
@@ -48,7 +48,7 @@ export async function searchWeb(query) {
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(9000) });
     const html = await res.text();
     const snippets = [...html.matchAll(/result__snippet[^>]*>([\s\S]*?)<\/a>/g)]
-      .map((m) => stripHtml(m[1]))
+      .map((m) => stripHtml(m[1] || ''))
       .filter((s) => s.length > 20)
       .slice(0, 5);
     results.push(...snippets);

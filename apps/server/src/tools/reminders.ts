@@ -5,17 +5,25 @@ import { dataFile, ensureDataDir } from '../data-dir.js';
 
 const FILE = dataFile('reminders.json');
 
+export interface Reminder {
+  id: string;
+  message: string;
+  time: string;
+  done: boolean;
+  createdAt: string;
+}
+
 /** Emite "reminder" quando um lembrete vence, para o servidor avisar a interface. */
 export const reminderEvents = new EventEmitter();
 
-let reminders = [];
+let reminders: Reminder[] = [];
 
-async function persist() {
+async function persist(): Promise<void> {
   await ensureDataDir();
   await writeFile(FILE, JSON.stringify(reminders, null, 2), 'utf8');
 }
 
-export async function loadReminders() {
+export async function loadReminders(): Promise<Reminder[]> {
   try {
     await ensureDataDir();
     if (existsSync(FILE)) {
@@ -34,7 +42,7 @@ export async function loadReminders() {
  *   - "às 15:30", "as 9h", "amanhã às 8"
  * Se nada casar, tenta Date.parse; por fim, lança erro.
  */
-export function parseWhen(when) {
+export function parseWhen(when: string): string {
   const text = String(when || '').trim().toLowerCase();
   const now = new Date();
 
@@ -42,12 +50,12 @@ export function parseWhen(when) {
   const rel = text.match(/em\s+(\d+)\s*(segundo|minuto|hora|dia)s?/);
   if (rel) {
     const amount = Number(rel[1]);
-    const unitMs = { segundo: 1000, minuto: 60000, hora: 3600000, dia: 86400000 }[rel[2]];
-    return new Date(now.getTime() + amount * unitMs).toISOString();
+    const unitMs = ({ segundo: 1000, minuto: 60000, hora: 3600000, dia: 86400000 } as Record<string, number>)[rel[2]!];
+    return new Date(now.getTime() + amount * unitMs!).toISOString();
   }
 
   // "amanhã ..." adiciona 1 dia à base
-  let base = new Date(now);
+  const base = new Date(now);
   const tomorrow = /amanh[aã]/.test(text);
   if (tomorrow) base.setDate(base.getDate() + 1);
 
@@ -68,9 +76,9 @@ export function parseWhen(when) {
   throw new Error('Não entendi o horário. Tente algo como "em 10 minutos" ou "às 15:30".');
 }
 
-export async function createReminder(message, when) {
+export async function createReminder(message: string, when: string) {
   const iso = parseWhen(when);
-  const reminder = {
+  const reminder: Reminder = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     message: String(message || 'Lembrete'),
     time: iso,
@@ -83,13 +91,13 @@ export async function createReminder(message, when) {
   return { reminder, human: `Lembrete criado para ${quando}: "${reminder.message}".` };
 }
 
-export function listReminders() {
+export function listReminders(): Reminder[] {
   return reminders
     .filter((r) => !r.done)
-    .sort((a, b) => new Date(a.time) - new Date(b.time));
+    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 }
 
-export async function deleteReminder(id) {
+export async function deleteReminder(id: string): Promise<boolean> {
   const before = reminders.length;
   reminders = reminders.filter((r) => r.id !== id);
   await persist();
@@ -97,7 +105,7 @@ export async function deleteReminder(id) {
 }
 
 /** Verifica lembretes vencidos a cada 15s e dispara o evento. */
-export function startReminderLoop() {
+export function startReminderLoop(): void {
   setInterval(async () => {
     const now = Date.now();
     let changed = false;

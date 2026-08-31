@@ -10,7 +10,7 @@ const execAsync = promisify(exec);
  */
 
 // Mapa de nomes falados -> comando/alvo para abrir apps comuns do Windows.
-const APP_MAP = {
+const APP_MAP: Record<string, string> = {
   // Navegadores
   'chrome': 'start "" chrome',
   'google chrome': 'start "" chrome',
@@ -47,7 +47,7 @@ const APP_MAP = {
 };
 
 // Sites conhecidos por apelido -> URL, para "abrir o youtube" etc.
-const SITE_MAP = {
+const SITE_MAP: Record<string, string> = {
   'youtube': 'https://www.youtube.com',
   'google': 'https://www.google.com',
   'gmail': 'https://mail.google.com',
@@ -64,11 +64,11 @@ const SITE_MAP = {
   'notícias': 'https://news.google.com/?hl=pt-BR',
 };
 
-function normalize(str) {
+function normalize(str: string): string {
   return String(str || '').trim().toLowerCase();
 }
 
-export async function openApplication(name) {
+export async function openApplication(name: string): Promise<string> {
   const key = normalize(name);
 
   // 1) App conhecido
@@ -89,7 +89,7 @@ export async function openApplication(name) {
   return `Tentando abrir ${name}.`;
 }
 
-export async function openWebsite(urlOrQuery) {
+export async function openWebsite(urlOrQuery: string): Promise<string> {
   let target = String(urlOrQuery || '').trim();
   const key = normalize(target);
 
@@ -108,9 +108,9 @@ export async function openWebsite(urlOrQuery) {
   return `Abrindo ${target}.`;
 }
 
-export async function openFolder(pathValue) {
+export async function openFolder(pathValue: string): Promise<string> {
   const raw = String(pathValue || '').trim();
-  const shortcuts = {
+  const shortcuts: Record<string, string> = {
     'documentos': '%USERPROFILE%\\Documents',
     'downloads': '%USERPROFILE%\\Downloads',
     'imagens': '%USERPROFILE%\\Pictures',
