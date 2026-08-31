@@ -53,6 +53,7 @@ import {
 import { initDb } from './db/index.js';
 import { communityRouter } from './api/community.js';
 import { attachSignaling } from './realtime/signaling.js';
+import { setGatherStatus } from './tools/gather-status.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
@@ -218,15 +219,18 @@ app.post('/api/chat', async (req, res) => {
     }
   };
 
+  setGatherStatus('working');
   try {
     const { reply, actions } = await processMessage(userText, send);
     send({ type: 'final', text: reply, actions });
+    setGatherStatus('on');
   } catch (err) {
     console.error('[chat] erro:', err?.message || err);
     send({
       type: 'error',
       text: 'Tive um problema para processar isso agora. Tente de novo daqui a pouco.',
     });
+    setGatherStatus('alert');
   } finally {
     res.end();
   }
@@ -543,12 +547,14 @@ async function start() {
       );
     }
     console.log('');
+    setGatherStatus('on');
   });
 }
 
 // Não deixa o processo do Piper órfão quando o motor é desligado.
 for (const sinal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sinal, async () => {
+    await setGatherStatus('off');
     await shutdownLocal();
     process.exit(0);
   });
