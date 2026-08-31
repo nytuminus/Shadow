@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "tsx watch src/index.js",
+    "start": "tsx src/index.js",
+    "start:prod": "node dist/index.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
@@ -14,5 +17,9 @@
     "mysql2": "^3.23.3",
     "nanoid": "^5.1.16",
     "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
   }
 }

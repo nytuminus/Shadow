@@ -16,10 +16,20 @@ const net = require('node:net');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..', '..');
-const SERVER = path.join(__dirname, '..', 'server', 'src', 'index.js');
+const SERVER_DIR = path.join(__dirname, '..', 'server');
 const PORT = Number(process.env.PORT) || 4577;
 const URL_APP = `http://localhost:${PORT}`;
-const ICON = path.join(__dirname, '..', 'server', 'public', 'logo.png');
+const ICON = path.join(SERVER_DIR, 'public', 'logo.png');
+
+// Em dev, o servidor ainda é TypeScript/ESM misto e sobe via tsx (sem passo
+// de build). Empacotado, roda o JS puro já compilado em dist/ — o instalador
+// não carrega nenhuma ferramenta de TS dentro dele.
+function motorArgs() {
+  if (app.isPackaged) return [path.join(SERVER_DIR, 'dist', 'index.js')];
+  const tsxPkg = require.resolve('tsx/package.json', { paths: [SERVER_DIR] });
+  const tsxCli = path.join(path.dirname(tsxPkg), require(tsxPkg).bin);
+  return [tsxCli, path.join(SERVER_DIR, 'src', 'index.js')];
+}
 
 // --hidden: começa só na bandeja (usado quando o Windows inicia o Shadow).
 const comecarEscondido =
@@ -68,7 +78,7 @@ async function subirMotor() {
   if (motor) return;
   if (await portaAtiva()) return; // já tem um motor no ar; aproveitamos ele
 
-  motor = spawn(process.execPath, [SERVER], {
+  motor = spawn(process.execPath, motorArgs(), {
     cwd: ROOT,
     env: {
       ...process.env,

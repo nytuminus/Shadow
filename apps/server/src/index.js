@@ -5,6 +5,8 @@ import { existsSync } from 'node:fs';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// manter primeiro entre os imports locais: carrega o .env antes de qualquer
+// outro módulo ler process.env (nenhum organizador de import deve reordenar isto)
 import { config, hasApiKey, CATCHPHRASE, ENV_PATH, isPackagedApp, saveApiKey } from './config.js';
 import { processMessage, resetConversation, resetAI, modeloAtivo } from './brain.js';
 import { synthesize, warmUp, isBlocked, VOICES, isLocalAvailable, resetTtsAI } from './tts.js';
