@@ -56,6 +56,7 @@ import { initDb } from './db/index.js';
 import { communityRouter } from './api/community.js';
 import { attachSignaling } from './realtime/signaling.js';
 import { login, requireAuth, seedEmployeesIfEmpty, type AuthedRequest } from './office/auth.js';
+import { attachOfficeSocket } from './office/socket.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
@@ -533,6 +534,8 @@ async function garantirEnvDoApp(): Promise<void> {
 const httpServer = createServer(app);
 // Sinalização WebRTC + chat em tempo real da área "Salas" (caminho /ws).
 attachSignaling(httpServer);
+// Posição + proximidade do escritório 2D (Socket.io, path /socket.io).
+attachOfficeSocket(httpServer);
 
 async function start(): Promise<void> {
   await garantirEnvDoApp();
