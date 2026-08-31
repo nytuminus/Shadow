@@ -24,7 +24,10 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.tilemapTiledJSON(MAP_KEY, '/maps/map.json');
+    // Caminho relativo à base do Vite (/office/ em produção) — um caminho
+    // começando com "/" ignoraria a base e buscaria na raiz do site, dando
+    // 404 silencioso e deixando a tela preta (foi exatamente o que aconteceu).
+    this.load.tilemapTiledJSON(MAP_KEY, `${import.meta.env.BASE_URL}maps/map.json`);
   }
 
   create(): void {
