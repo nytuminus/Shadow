@@ -35,4 +35,4 @@ export function db(): DbStore {
   return store;
 }
 
-export type { DbStore, DbUser, DbRoom, DbChannel, DbMessage, ChannelType } from './types.js';
+export type { DbStore, DbUser, DbRoom, DbChannel, DbMessage, ChannelType, Employee } from './types.js';

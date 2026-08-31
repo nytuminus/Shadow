@@ -55,6 +55,7 @@ import {
 import { initDb } from './db/index.js';
 import { communityRouter } from './api/community.js';
 import { attachSignaling } from './realtime/signaling.js';
+import { login, requireAuth, seedEmployeesIfEmpty, type AuthedRequest } from './office/auth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
@@ -100,6 +101,22 @@ app.use(express.static(PUBLIC_DIR));
 
 // API da plataforma "Salas" (comunidade estilo Discord).
 app.use('/api/community', communityRouter);
+
+// ---- Escritório 2D: login dos funcionários ----
+app.post('/api/office/login', async (req, res) => {
+  try {
+    const { token, employee } = await login(req.body?.username, req.body?.password);
+    res.json({ token, employee });
+  } catch (err) {
+    res.status(401).json({ error: errMsg(err) || 'Usuário ou senha inválidos.' });
+  }
+});
+
+// Confirma quem é o dono de um token — usado pelo cliente pra validar a
+// sessão salva antes de tentar entrar direto no mapa.
+app.get('/api/office/me', requireAuth, (req: AuthedRequest, res) => {
+  res.json({ employee: req.employee });
+});
 
 // Estado / configuração da interface.
 app.get('/api/status', (req, res) => {
@@ -520,6 +537,17 @@ attachSignaling(httpServer);
 async function start(): Promise<void> {
   await garantirEnvDoApp();
   await initDb();
+  // Conta inicial do escritório 2D, só na primeira vez (banco vazio). Vem do
+  // .env pra nunca ter senha em texto puro no código-fonte.
+  if (process.env.OFFICE_SEED_USERNAME && process.env.OFFICE_SEED_PASSWORD) {
+    await seedEmployeesIfEmpty([
+      {
+        username: process.env.OFFICE_SEED_USERNAME,
+        name: process.env.OFFICE_SEED_NAME || process.env.OFFICE_SEED_USERNAME,
+        password: process.env.OFFICE_SEED_PASSWORD,
+      },
+    ]);
+  }
   await loadReminders();
   await loadCommands();
   await loadHistory();

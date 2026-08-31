@@ -44,12 +44,24 @@ export interface RoomPatch {
   color?: string;
 }
 
+export interface Employee {
+  id: string;
+  username: string;
+  name: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
 export interface DbStore {
   kind: 'json' | 'mysql';
   init(): Promise<DbStore>;
 
   upsertUser(user: { id?: string; name: string; avatar?: string; color?: string }): Promise<DbUser>;
   getUser(id: string): Promise<DbUser | null>;
+
+  createEmployee(employee: { username: string; name: string; passwordHash: string }): Promise<Employee>;
+  getEmployeeByUsername(username: string): Promise<Employee | null>;
+  listEmployees(): Promise<Employee[]>;
 
   createRoom(room: { name: string; icon?: string; color?: string }): Promise<DbRoom>;
   listRooms(): Promise<DbRoom[]>;

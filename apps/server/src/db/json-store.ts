@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 import { dataFile, ensureDataDir } from '../data-dir.js';
-import type { DbChannel, DbMessage, DbRoom, DbStore, DbUser } from './types.js';
+import type { DbChannel, DbMessage, DbRoom, DbStore, DbUser, Employee } from './types.js';
 
 interface JsonDb {
   rooms: DbRoom[];
@@ -54,6 +54,38 @@ function persist(): void {
   }, 250);
 }
 
+// Funcionários (login) ficam num arquivo à parte — é credencial, não dado de
+// chat, e assim segue o mesmo padrão dos outros arquivos soltos (reminders,
+// commands...) em vez de inchar o community.json.
+const EMPLOYEES_FILE = () => dataFile('employees.json');
+let employeesCache: Employee[] | null = null;
+let employeesWriteTimer: ReturnType<typeof setTimeout> | undefined;
+
+async function loadEmployees(): Promise<Employee[]> {
+  if (employeesCache) return employeesCache;
+  await ensureDataDir();
+  try {
+    employeesCache = existsSync(EMPLOYEES_FILE())
+      ? JSON.parse(await readFile(EMPLOYEES_FILE(), 'utf8'))
+      : [];
+  } catch {
+    employeesCache = [];
+  }
+  return employeesCache!;
+}
+
+function persistEmployees(): void {
+  clearTimeout(employeesWriteTimer);
+  employeesWriteTimer = setTimeout(async () => {
+    try {
+      await ensureDataDir();
+      await writeFile(EMPLOYEES_FILE(), JSON.stringify(employeesCache, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[db-json] gravação de employees falhou:', err instanceof Error ? err.message : err);
+    }
+  }, 250);
+}
+
 const now = () => new Date().toISOString();
 
 export const jsonStore: DbStore = {
@@ -86,6 +118,22 @@ export const jsonStore: DbStore = {
   async getUser(id) {
     const db = await load();
     return db.users.find((u) => u.id === id) || null;
+  },
+
+  // ---- Funcionários (login) ----
+  async createEmployee({ username, name, passwordHash }) {
+    const employees = await loadEmployees();
+    const employee: Employee = { id: nanoid(10), username, name, passwordHash, createdAt: now() };
+    employees.push(employee);
+    persistEmployees();
+    return employee;
+  },
+  async getEmployeeByUsername(username) {
+    const employees = await loadEmployees();
+    return employees.find((e) => e.username === username) || null;
+  },
+  async listEmployees() {
+    return loadEmployees();
   },
 
   // ---- Salas (servidores) ----

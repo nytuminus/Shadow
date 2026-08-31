@@ -14,7 +14,7 @@
 
 import { nanoid } from 'nanoid';
 import type { Pool } from 'mysql2/promise';
-import type { ChannelType, DbChannel, DbMessage, DbRoom, DbStore, DbUser } from './types.js';
+import type { ChannelType, DbChannel, DbMessage, DbRoom, DbStore, DbUser, Employee } from './types.js';
 
 function readConfig() {
   if (process.env.DATABASE_URL) {
@@ -92,6 +92,14 @@ export function makeMysqlStore(): DbStore {
         FOREIGN KEY (channelId) REFERENCES channels(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
+      await q(`CREATE TABLE IF NOT EXISTS employees (
+        id VARCHAR(24) PRIMARY KEY,
+        username VARCHAR(60) NOT NULL UNIQUE,
+        name VARCHAR(120) NOT NULL,
+        passwordHash VARCHAR(120) NOT NULL,
+        createdAt DATETIME NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
       // Semente inicial.
       const rooms = await q('SELECT id FROM rooms LIMIT 1');
       if (rooms.length === 0) {
@@ -117,6 +125,20 @@ export function makeMysqlStore(): DbStore {
     async getUser(id) {
       const rows = await q<DbUser>('SELECT * FROM users WHERE id=?', [id]);
       return rows[0] || null;
+    },
+
+    async createEmployee({ username, name, passwordHash }) {
+      const id = nanoid(10);
+      const ts = new Date();
+      await q('INSERT INTO employees (id,username,name,passwordHash,createdAt) VALUES (?,?,?,?,?)', [id, username, name, passwordHash, ts]);
+      return { id, username, name, passwordHash, createdAt: ts.toISOString() };
+    },
+    async getEmployeeByUsername(username) {
+      const rows = await q<Employee>('SELECT * FROM employees WHERE username=?', [username]);
+      return rows[0] || null;
+    },
+    async listEmployees() {
+      return q<Employee>('SELECT * FROM employees ORDER BY createdAt ASC');
     },
 
     async createRoom({ name, icon = '💬', color = '#8b7bff' }) {
