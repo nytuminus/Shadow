@@ -54,7 +54,6 @@ import {
 } from './tools/commands.js';
 import { initDb } from './db/index.js';
 import { communityRouter } from './api/community.js';
-import { attachSignaling } from './realtime/signaling.js';
 import { login, requireAuth, seedEmployeesIfEmpty, type AuthedRequest } from './office/auth.js';
 import { attachOfficeSocket } from './office/socket.js';
 
@@ -537,8 +536,13 @@ async function garantirEnvDoApp(): Promise<void> {
 }
 
 const httpServer = createServer(app);
-// Sinalização WebRTC + chat em tempo real da área "Salas" (caminho /ws).
-attachSignaling(httpServer);
+// A sinalização das Salas (/ws, biblioteca `ws` crua) foi DESLIGADA de
+// propósito: coexistindo com o Socket.io do escritório no mesmo httpServer,
+// os dois brigavam pelo upgrade de WebSocket (confirmado testando os dois
+// juntos vs. só o socket.io — o erro "Unexpected response code: 400" some
+// sem o /ws). Como o escritório 2D substitui as Salas por completo, não faz
+// sentido reativar algo que já vai sair — `attachSignaling` fica sem uso
+// aqui (arquivo mantido em realtime/signaling.ts só de referência por ora).
 // Posição + proximidade do escritório 2D (Socket.io, path /socket.io).
 attachOfficeSocket(httpServer);
 
