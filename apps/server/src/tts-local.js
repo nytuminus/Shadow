@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..', 'voz-local');
+const ROOT = join(__dirname, '..', '..', '..', 'voz-local');
 const EXE = join(ROOT, 'piper', 'piper.exe');
 const MODEL = join(ROOT, `${config.localVoice}.onnx`);
 // Fora da pasta do projeto de propósito: evita o OneDrive sincronizar áudio temporário.

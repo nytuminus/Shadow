@@ -1,8 +1,8 @@
 node_modules/
 .env
-server/data/*.json
-server/data/tts-cache/
-!server/data/.gitkeep
+apps/server/data/*.json
+apps/server/data/tts-cache/
+!apps/server/data/.gitkeep
 *.log
 voz-local/
 instalador/

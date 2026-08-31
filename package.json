@@ -3,10 +3,10 @@
   "version": "2.0.0",
   "description": "Shadow — assistente pessoal por voz, com voz neural e controle do PC.",
   "type": "module",
-  "main": "desktop/main.cjs",
+  "main": "apps/desktop/main.cjs",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
+    "start": "pnpm --filter @shadow/server start",
+    "dev": "pnpm --filter @shadow/server dev",
     "app": "electron .",
     "dist": "electron-builder --win",
     "salas:install": "npm --prefix web install",
@@ -15,14 +15,6 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "dependencies": {
-    "@google/genai": "^1.52.0",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.2",
-    "mysql2": "^3.23.3",
-    "nanoid": "^5.1.16",
-    "ws": "^8.21.3"
   },
   "devDependencies": {
     "electron": "^33.4.11",
@@ -36,14 +28,14 @@
       "output": "instalador"
     },
     "files": [
-      "desktop/**",
-      "server/**",
-      "public/**",
+      "apps/desktop/**",
+      "apps/server/**",
       "voz-local/**",
       "ferramentas/**",
       "package.json",
       ".env.example",
-      "!server/data/*.json",
+      "!apps/server/data/*.json",
+      "!apps/server/node_modules/.bin/**",
       "!instalador/**"
     ],
     "win": {
@@ -55,7 +47,7 @@
           ]
         }
       ],
-      "icon": "public/logo.png"
+      "icon": "apps/server/public/logo.png"
     },
     "nsis": {
       "oneClick": false,

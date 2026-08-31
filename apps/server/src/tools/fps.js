@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const RAIZ = join(__dirname, '..', '..');
+const RAIZ = join(__dirname, '..', '..', '..', '..');
 
 // Onde procurar o PresentMon, do mais fácil de achar para o mais técnico.
 // A pasta no APPDATA é a recomendada: sobrevive a uma atualização do app.

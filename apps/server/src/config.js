@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 //      aplicativo: assim a chave da API sobrevive a uma atualização do app;
 //   3. o .env da pasta de onde o processo foi chamado (compatibilidade).
 const CANDIDATOS = [
-  join(__dirname, '..', '.env'),
+  join(__dirname, '..', '..', '..', '.env'),
   process.env.APPDATA ? join(process.env.APPDATA, 'Shadow', '.env') : '',
   join(process.cwd(), '.env'),
 ].filter(Boolean);

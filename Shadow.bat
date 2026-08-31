@@ -24,10 +24,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Garante o pnpm (gerenciador do monorepo).
+where pnpm >nul 2>nul
+if errorlevel 1 (
+    echo   Instalando o pnpm...
+    call npm install -g pnpm
+)
+
 REM Instala as dependencias na primeira execucao.
 if not exist "node_modules" (
     echo   Primeira execucao: instalando dependencias. Pode demorar 1-2 min...
-    call npm install
+    call pnpm install
     if errorlevel 1 (
         echo.
         echo   [ERRO] Falha ao instalar as dependencias.
@@ -47,7 +54,7 @@ if not exist ".env" (
 )
 
 REM O proprio motor abre a janela do app no instante em que fica pronto
-REM (veja openAppWindow em server\index.js). Por isso setamos SHADOW_LAUNCH=1.
+REM (veja openAppWindow em apps\server\src\index.js). Por isso setamos SHADOW_LAUNCH=1.
 REM Assim a janela nunca abre antes da hora e nunca cai em "conexao recusada".
 set "SHADOW_LAUNCH=1"
 
@@ -55,6 +62,6 @@ REM Inicia o motor local (mantenha esta janela aberta).
 echo   Motor rodando. A janela do Shadow vai abrir quando ele estiver pronto.
 echo   Para desligar, feche esta janela.
 echo.
-node server\index.js
+node apps\server\src\index.js
 
 pause

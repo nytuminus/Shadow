@@ -56,7 +56,7 @@ import { attachSignaling } from './realtime/signaling.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
-const ROOT_DIR = join(__dirname, '..');
+const ROOT_DIR = join(__dirname, '..', '..', '..');
 
 // Abre a janela do app assim que o motor comeca a escutar. Como isto roda
 // dentro do callback do listen(), a porta ja esta no ar: nada de esperar

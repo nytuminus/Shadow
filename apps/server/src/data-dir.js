@@ -17,7 +17,7 @@ import { isPackagedApp } from './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PASTA_DO_PROJETO = join(__dirname, 'data');
+const PASTA_DO_PROJETO = join(__dirname, '..', 'data');
 
 export const DATA_DIR =
   isPackagedApp && process.env.APPDATA

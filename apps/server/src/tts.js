@@ -16,7 +16,7 @@ import { config } from './config.js';
 import { synthesizeLocal, isLocalAvailable } from './tts-local.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CACHE_DIR = join(__dirname, 'data', 'tts-cache');
+const CACHE_DIR = join(__dirname, '..', 'data', 'tts-cache');
 const MAX_CACHE_FILES = 120;
 const MAX_CHARS = 900;
 

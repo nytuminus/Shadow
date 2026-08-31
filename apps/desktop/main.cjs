@@ -15,11 +15,11 @@ const { spawn } = require('node:child_process');
 const net = require('node:net');
 const path = require('node:path');
 
-const ROOT = path.join(__dirname, '..');
-const SERVER = path.join(ROOT, 'server', 'index.js');
+const ROOT = path.join(__dirname, '..', '..');
+const SERVER = path.join(__dirname, '..', 'server', 'src', 'index.js');
 const PORT = Number(process.env.PORT) || 4577;
 const URL_APP = `http://localhost:${PORT}`;
-const ICON = path.join(ROOT, 'public', 'logo.png');
+const ICON = path.join(__dirname, '..', 'server', 'public', 'logo.png');
 
 // --hidden: começa só na bandeja (usado quando o Windows inicia o Shadow).
 const comecarEscondido =

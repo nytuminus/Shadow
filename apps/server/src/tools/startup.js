@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT_DIR = join(__dirname, '..', '..');
+const ROOT_DIR = join(__dirname, '..', '..', '..', '..');
 const BAT = join(ROOT_DIR, 'Shadow.bat');
 
 const STARTUP_DIR = process.env.APPDATA
