@@ -1,24 +1,32 @@
 // Adaptador de banco em ARQUIVO (JSON). É o fallback que roda sem nenhuma
 // configuração: guarda salas, canais, mensagens e usuários num único arquivo
-// em server/data (ou %APPDATA%\Shadow\data no app instalado).
+// em apps/server/data (ou %APPDATA%\Shadow\data no app instalado).
 //
 // Ele existe pra plataforma subir na hora, mesmo antes de você apontar o
 // MySQL da Hostinger. A interface pública é a MESMA do adaptador MySQL
-// (server/db/mysql-store.js), então trocar um pelo outro não mexe nas rotas.
+// (db/mysql-store.ts), então trocar um pelo outro não mexe nas rotas.
 
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 import { dataFile, ensureDataDir } from '../data-dir.js';
+import type { DbChannel, DbMessage, DbRoom, DbStore, DbUser } from './types.js';
+
+interface JsonDb {
+  rooms: DbRoom[];
+  channels: DbChannel[];
+  messages: DbMessage[];
+  users: DbUser[];
+}
 
 const FILE = () => dataFile('community.json');
 
-const empty = () => ({ rooms: [], channels: [], messages: [], users: [] });
+const empty = (): JsonDb => ({ rooms: [], channels: [], messages: [], users: [] });
 
-let cache = null;
-let writeTimer = null;
+let cache: JsonDb | null = null;
+let writeTimer: ReturnType<typeof setTimeout> | undefined;
 
-async function load() {
+async function load(): Promise<JsonDb> {
   if (cache) return cache;
   await ensureDataDir();
   try {
@@ -30,31 +38,31 @@ async function load() {
   } catch {
     cache = empty();
   }
-  return cache;
+  return cache!;
 }
 
 // Grava com um pequeno atraso pra não bater no disco a cada mensagem.
-function persist() {
+function persist(): void {
   clearTimeout(writeTimer);
   writeTimer = setTimeout(async () => {
     try {
       await ensureDataDir();
       await writeFile(FILE(), JSON.stringify(cache, null, 2), 'utf8');
     } catch (err) {
-      console.error('[db-json] gravação falhou:', err?.message || err);
+      console.error('[db-json] gravação falhou:', err instanceof Error ? err.message : err);
     }
   }, 250);
 }
 
 const now = () => new Date().toISOString();
 
-export const jsonStore = {
+export const jsonStore: DbStore = {
   kind: 'json',
 
   async init() {
-    await load();
+    const db = await load();
     // Semente: se não existe nenhuma sala, cria uma "Empresa" com canais base.
-    if (cache.rooms.length === 0) {
+    if (db.rooms.length === 0) {
       const room = await this.createRoom({ name: 'Empresa', icon: '🏢', color: '#8b7bff' });
       await this.createChannel(room.id, { name: 'geral', type: 'text' });
       await this.createChannel(room.id, { name: 'avisos', type: 'text' });
@@ -69,7 +77,7 @@ export const jsonStore = {
     const db = await load();
     const uid = id || nanoid(10);
     const existing = db.users.find((u) => u.id === uid);
-    const user = { id: uid, name, avatar, color, updatedAt: now() };
+    const user: DbUser = { id: uid, name, avatar, color, updatedAt: now() };
     if (existing) Object.assign(existing, user);
     else db.users.push(user);
     persist();
@@ -83,7 +91,7 @@ export const jsonStore = {
   // ---- Salas (servidores) ----
   async createRoom({ name, icon = '💬', color = '#8b7bff' }) {
     const db = await load();
-    const room = { id: nanoid(10), name, icon, color, createdAt: now() };
+    const room: DbRoom = { id: nanoid(10), name, icon, color, createdAt: now() };
     db.rooms.push(room);
     persist();
     return room;
@@ -118,7 +126,7 @@ export const jsonStore = {
   async createChannel(roomId, { name, type = 'text' }) {
     const db = await load();
     const position = db.channels.filter((c) => c.roomId === roomId).length;
-    const channel = { id: nanoid(10), roomId, name, type: type === 'voice' ? 'voice' : 'text', position, createdAt: now() };
+    const channel: DbChannel = { id: nanoid(10), roomId, name, type: type === 'voice' ? 'voice' : 'text', position, createdAt: now() };
     db.channels.push(channel);
     persist();
     return channel;
@@ -142,9 +150,9 @@ export const jsonStore = {
   },
 
   // ---- Mensagens (chat de texto por canal) ----
-  async addMessage(channelId, { userId, userName, text }) {
+  async addMessage(channelId, { userId = null, userName = null, text }) {
     const db = await load();
-    const msg = { id: nanoid(12), channelId, userId, userName, text, createdAt: now() };
+    const msg: DbMessage = { id: nanoid(12), channelId, userId, userName, text, createdAt: now() };
     db.messages.push(msg);
     // Mantém no máximo 500 mensagens por canal no arquivo local.
     const doCanal = db.messages.filter((m) => m.channelId === channelId);

@@ -1,7 +1,7 @@
 // Adaptador de banco MySQL (produção / multiusuário) — mesma interface do
-// adaptador JSON (server/db/json-store.js). Usa mysql2/promise com pool de
+// adaptador JSON (db/json-store.ts). Usa mysql2/promise com pool de
 // conexões. Ativado quando as variáveis MYSQL_* (ou DATABASE_URL) existem
-// no .env — veja server/db/index.js.
+// no .env — veja db/index.ts.
 //
 // Credenciais esperadas no .env:
 //   MYSQL_HOST=...        (ex.: painel da Hostinger)
@@ -13,8 +13,8 @@
 //   DATABASE_URL=mysql://user:pass@host:3306/dbname
 
 import { nanoid } from 'nanoid';
-
-let mysql = null; // carregado sob demanda pra não pesar quando usamos JSON
+import type { Pool } from 'mysql2/promise';
+import type { ChannelType, DbChannel, DbMessage, DbRoom, DbStore, DbUser } from './types.js';
 
 function readConfig() {
   if (process.env.DATABASE_URL) {
@@ -29,26 +29,26 @@ function readConfig() {
   };
 }
 
-export function mysqlConfigured() {
+export function mysqlConfigured(): boolean {
   return !!(process.env.DATABASE_URL || (process.env.MYSQL_HOST && process.env.MYSQL_DATABASE));
 }
 
-export function makeMysqlStore() {
-  let pool = null;
+export function makeMysqlStore(): DbStore {
+  let pool: Pool;
 
-  async function q(sql, params = []) {
+  async function q<T>(sql: string, params: any[] = []): Promise<T[]> {
     const [rows] = await pool.execute(sql, params);
-    return rows;
+    return rows as T[];
   }
 
-  const store = {
+  const store: DbStore = {
     kind: 'mysql',
 
     async init() {
-      ({ default: mysql } = await import('mysql2/promise'));
+      const { default: mysql } = await import('mysql2/promise');
       const cfg = readConfig();
       pool = mysql.createPool(
-        cfg.uri
+        'uri' in cfg
           ? { uri: cfg.uri, waitForConnections: true, connectionLimit: 10, namedPlaceholders: false }
           : { ...cfg, waitForConnections: true, connectionLimit: 10 }
       );
@@ -115,7 +115,7 @@ export function makeMysqlStore() {
       return { id: uid, name, avatar, color, updatedAt: ts.toISOString() };
     },
     async getUser(id) {
-      const rows = await q('SELECT * FROM users WHERE id=?', [id]);
+      const rows = await q<DbUser>('SELECT * FROM users WHERE id=?', [id]);
       return rows[0] || null;
     },
 
@@ -126,10 +126,10 @@ export function makeMysqlStore() {
       return { id, name, icon, color, createdAt: ts.toISOString() };
     },
     async listRooms() {
-      return q('SELECT * FROM rooms ORDER BY createdAt ASC');
+      return q<DbRoom>('SELECT * FROM rooms ORDER BY createdAt ASC');
     },
     async getRoom(id) {
-      const rows = await q('SELECT * FROM rooms WHERE id=?', [id]);
+      const rows = await q<DbRoom>('SELECT * FROM rooms WHERE id=?', [id]);
       return rows[0] || null;
     },
     async updateRoom(id, patch) {
@@ -148,17 +148,17 @@ export function makeMysqlStore() {
     async createChannel(roomId, { name, type = 'text' }) {
       const id = nanoid(10);
       const ts = new Date();
-      const [{ n }] = await q('SELECT COUNT(*) AS n FROM channels WHERE roomId=?', [roomId]);
-      const position = Number(n) || 0;
-      const t = type === 'voice' ? 'voice' : 'text';
+      const rows = await q<{ n: number }>('SELECT COUNT(*) AS n FROM channels WHERE roomId=?', [roomId]);
+      const position = Number(rows[0]?.n) || 0;
+      const t: ChannelType = type === 'voice' ? 'voice' : 'text';
       await q('INSERT INTO channels (id,roomId,name,type,position,createdAt) VALUES (?,?,?,?,?,?)', [id, roomId, name, t, position, ts]);
       return { id, roomId, name, type: t, position, createdAt: ts.toISOString() };
     },
     async listChannels(roomId) {
-      return q('SELECT * FROM channels WHERE roomId=? ORDER BY position ASC', [roomId]);
+      return q<DbChannel>('SELECT * FROM channels WHERE roomId=? ORDER BY position ASC', [roomId]);
     },
     async getChannel(id) {
-      const rows = await q('SELECT * FROM channels WHERE id=?', [id]);
+      const rows = await q<DbChannel>('SELECT * FROM channels WHERE id=?', [id]);
       return rows[0] || null;
     },
     async deleteChannel(id) {
@@ -166,14 +166,14 @@ export function makeMysqlStore() {
       return true;
     },
 
-    async addMessage(channelId, { userId, userName, text }) {
+    async addMessage(channelId, { userId = null, userName = null, text }) {
       const id = nanoid(12);
       const ts = new Date();
-      await q('INSERT INTO messages (id,channelId,userId,userName,text,createdAt) VALUES (?,?,?,?,?,?)', [id, channelId, userId || null, userName || null, text, ts]);
+      await q('INSERT INTO messages (id,channelId,userId,userName,text,createdAt) VALUES (?,?,?,?,?,?)', [id, channelId, userId, userName, text, ts]);
       return { id, channelId, userId, userName, text, createdAt: ts.toISOString() };
     },
     async listMessages(channelId, limit = 50) {
-      const rows = await q('SELECT * FROM messages WHERE channelId=? ORDER BY createdAt DESC LIMIT ?', [channelId, Number(limit)]);
+      const rows = await q<DbMessage>('SELECT * FROM messages WHERE channelId=? ORDER BY createdAt DESC LIMIT ?', [channelId, Number(limit)]);
       return rows.reverse();
     },
   };

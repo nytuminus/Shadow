@@ -9,10 +9,11 @@
 
 import { jsonStore } from './json-store.js';
 import { makeMysqlStore, mysqlConfigured } from './mysql-store.js';
+import type { DbStore } from './types.js';
 
-let store = null;
+let store: DbStore | null = null;
 
-export async function initDb() {
+export async function initDb(): Promise<DbStore> {
   if (store) return store;
   if (mysqlConfigured()) {
     try {
@@ -20,7 +21,7 @@ export async function initDb() {
       console.log('     Banco: MySQL (Hostinger) conectado');
       return store;
     } catch (err) {
-      console.error('[db] MySQL falhou, caindo pro arquivo local:', err?.message || err);
+      console.error('[db] MySQL falhou, caindo pro arquivo local:', err instanceof Error ? err.message : err);
     }
   }
   store = await jsonStore.init();
@@ -29,7 +30,9 @@ export async function initDb() {
 }
 
 /** Acesso ao banco já inicializado. */
-export function db() {
+export function db(): DbStore {
   if (!store) throw new Error('Banco ainda não foi inicializado (chame initDb).');
   return store;
 }
+
+export type { DbStore, DbUser, DbRoom, DbChannel, DbMessage, ChannelType } from './types.js';

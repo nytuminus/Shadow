@@ -1,8 +1,8 @@
 // Onde o Shadow guarda o que é seu: lembretes, comandos salvos, histórico de
 // partidas e a sessão do Spotify.
 //
-// Rodando pela pasta do projeto (Shadow.bat / npm start), fica em server/data,
-// como sempre foi.
+// Rodando pela pasta do projeto (Shadow.bat / npm start), fica em
+// apps/server/data, como sempre foi.
 //
 // Rodando como APLICATIVO INSTALADO, isso não serve: a pasta do programa é
 // substituída inteira a cada atualização, e o histórico ia junto. Então os
@@ -19,16 +19,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PASTA_DO_PROJETO = join(__dirname, '..', 'data');
 
-export const DATA_DIR =
+export const DATA_DIR: string =
   isPackagedApp && process.env.APPDATA
     ? join(process.env.APPDATA, 'Shadow', 'data')
     : PASTA_DO_PROJETO;
 
 /** Caminho de um arquivo de dados. */
-export const dataFile = (nome) => join(DATA_DIR, nome);
+export const dataFile = (nome: string): string => join(DATA_DIR, nome);
 
 /** Garante a pasta (e traz os dados antigos na primeira execução do app). */
-export async function ensureDataDir() {
+export async function ensureDataDir(): Promise<string> {
   if (existsSync(DATA_DIR)) return DATA_DIR;
   await mkdir(DATA_DIR, { recursive: true });
 
@@ -40,7 +40,7 @@ export async function ensureDataDir() {
       }
       console.log(`     Dados migrados para ${DATA_DIR}`);
     } catch (err) {
-      console.error('[dados]', err?.message || err);
+      console.error('[dados]', err instanceof Error ? err.message : err);
     }
   }
   return DATA_DIR;

@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 //   2. %APPDATA%\Shadow\.env — usado quando o Shadow está INSTALADO como
 //      aplicativo: assim a chave da API sobrevive a uma atualização do app;
 //   3. o .env da pasta de onde o processo foi chamado (compatibilidade).
-const CANDIDATOS = [
+const CANDIDATOS: string[] = [
   join(__dirname, '..', '..', '..', '.env'),
   process.env.APPDATA ? join(process.env.APPDATA, 'Shadow', '.env') : '',
   join(process.cwd(), '.env'),
@@ -25,11 +25,28 @@ for (const caminho of CANDIDATOS) {
 export const isPackagedApp = !!process.versions.electron;
 
 /** Onde o usuário deve colocar a chave da API. */
-export const ENV_PATH =
+export const ENV_PATH: string =
   CANDIDATOS.find((c) => existsSync(c)) ||
-  (isPackagedApp && CANDIDATOS[1] ? CANDIDATOS[1] : CANDIDATOS[0]);
+  (isPackagedApp && CANDIDATOS[1] ? CANDIDATOS[1] : CANDIDATOS[0]!);
 
-export const config = {
+export interface ShadowConfig {
+  apiKey: string;
+  model: string;
+  fallbackModel: string;
+  port: number;
+  userName: string;
+  assistantName: string;
+  ttsVoice: string;
+  ttsModel: string;
+  ttsEnabled: boolean;
+  localVoice: string;
+  localRate: number;
+  defaultEngine: string;
+  spotifyClientId: string;
+  spotifyClientSecret: string;
+}
+
+export const config: ShadowConfig = {
   // Aceita GEMINI_API_KEY (nome novo) ou GOOGLE_API_KEY (alternativo).
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
   model: process.env.JARVIS_MODEL || 'gemini-flash-latest',
@@ -40,7 +57,7 @@ export const config = {
   userName: process.env.JARVIS_USER_NAME || 'Senhor',
   // Nome do assistente (e palavra de ativação).
   assistantName: process.env.ASSISTANT_NAME || 'Shadow',
-  // Voz neural do Gemini (mais bonita, ~3s, gasta cota). Lista em server/tts.js.
+  // Voz neural do Gemini (mais bonita, ~3s, gasta cota). Lista em tts.ts.
   ttsVoice: process.env.SHADOW_VOICE || 'Charon',
   ttsModel: process.env.SHADOW_TTS_MODEL || 'gemini-2.5-flash-preview-tts',
   ttsEnabled: process.env.SHADOW_TTS !== 'off',
@@ -58,21 +75,20 @@ export const config = {
 export const spotifyRedirectUri =
   process.env.SPOTIFY_REDIRECT_URI || `http://127.0.0.1:${config.port}/api/spotify/callback`;
 
-export const hasSpotify = () =>
+export const hasSpotify = (): boolean =>
   !!config.spotifyClientId && !!config.spotifyClientSecret;
 
 // Bordão: resposta fixa sempre que perguntam se ele está aí.
 export const CATCHPHRASE = process.env.SHADOW_CATCHPHRASE || 'O que é, desgraça?';
 
-export const hasApiKey = () =>
+export const hasApiKey = (): boolean =>
   typeof config.apiKey === 'string' && config.apiKey.trim().length > 20;
 
 /**
  * Grava a chave da API no .env e passa a valer NA HORA (sem reiniciar).
  * Quem chama precisa zerar os clientes já criados — veja resetAIClients().
- * @param {string} chave
  */
-export async function saveApiKey(chave) {
+export async function saveApiKey(chave: string): Promise<string> {
   const limpa = String(chave || '').trim();
   if (limpa.length < 20 || /\s/.test(limpa)) {
     throw new Error('Essa chave não parece válida. Ela é uma linha só, sem espaços.');
