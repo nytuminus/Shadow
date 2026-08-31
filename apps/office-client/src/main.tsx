@@ -5,6 +5,7 @@ import { createGame } from './game/createGame.js';
 import { LoginScreen } from './ui/LoginScreen.js';
 import { ChatPanel } from './ui/ChatPanel.js';
 import { CallControls } from './ui/CallControls.js';
+import { AssistantWidget } from './ui/AssistantWidget.js';
 import { loadSession, clearSession, type Session } from './net/session.js';
 import { me, getRtcConfig } from './net/api.js';
 import { connectOfficeSocket, type OfficeSocket } from './net/socket.js';
@@ -76,6 +77,7 @@ function App() {
           <ChatPanel socket={live.socket} />
         </>
       )}
+      <AssistantWidget />
     </div>
   );
 }

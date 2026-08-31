@@ -86,21 +86,18 @@ const app = express();
 app.use(express.json());
 
 // ---- Roteamento da plataforma (antes do estático) ----
-// A raiz "/" agora é o SHELL da plataforma (React): reúne o robô Shadow, a
-// área de Jogos e as Salas num só lugar, com a chamada persistente por cima.
-const SHELL = join(PUBLIC_DIR, 'salas', 'index.html');
-app.get('/', (req, res) => res.sendFile(SHELL));
-app.get('/salas', (req, res) => res.sendFile(SHELL));
-// O app do assistente (voz, LoL, monitor) continua inteiro — agora servido em
-// /assistant e embutido como módulo dentro do shell (iframe, mesmo domínio).
-// Servido SEM barra final para os caminhos relativos (css/, js/) resolverem
-// a partir da raiz.
+// A raiz "/" agora é o escritório 2D — substitui de vez o shell das Salas
+// (React, canais fixos). O bundle antigo continua no ar em /salas-legado
+// como rede de segurança enquanto valida o corte; sai de vez depois.
+const OFFICE = join(PUBLIC_DIR, 'office', 'index.html');
+app.get('/', (req, res) => res.sendFile(OFFICE));
+app.get('/office', (req, res) => res.sendFile(OFFICE));
+app.get('/salas-legado', (req, res) => res.sendFile(join(PUBLIC_DIR, 'salas', 'index.html')));
+// O app do assistente (voz, LoL, monitor) continua inteiro — servido em
+// /assistant e embutido como janela flutuante dentro do escritório (iframe,
+// mesmo domínio). Servido SEM barra final para os caminhos relativos
+// (css/, js/) resolverem a partir da raiz.
 app.get('/assistant', (req, res) => res.sendFile(join(PUBLIC_DIR, 'index.html')));
-
-// Escritório 2D (em construção) — rota própria por enquanto, ainda não é a
-// tela principal (isso vem no corte final, quando substituir as Salas).
-// Exige `pnpm --filter @shadow/office-client run build` pra existir.
-app.get('/office', (req, res) => res.sendFile(join(PUBLIC_DIR, 'office', 'index.html')));
 
 app.use(express.static(PUBLIC_DIR));
 
