@@ -98,6 +98,11 @@ app.get('/salas', (req, res) => res.sendFile(SHELL));
 // a partir da raiz.
 app.get('/assistant', (req, res) => res.sendFile(join(PUBLIC_DIR, 'index.html')));
 
+// Escritório 2D (em construção) — rota própria por enquanto, ainda não é a
+// tela principal (isso vem no corte final, quando substituir as Salas).
+// Exige `pnpm --filter @shadow/office-client run build` pra existir.
+app.get('/office', (req, res) => res.sendFile(join(PUBLIC_DIR, 'office', 'index.html')));
+
 app.use(express.static(PUBLIC_DIR));
 
 // API da plataforma "Salas" (comunidade estilo Discord).
